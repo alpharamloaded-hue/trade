@@ -1,0 +1,6 @@
+{
+  "name": "DigitScope Analytics",
+  "description": "Real-time synthetic index tick streaming, digit match probability heatmaps, pattern scanning, and multiplier liquidation risk modeling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
