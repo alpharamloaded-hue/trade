@@ -140,12 +140,24 @@ class DerivWebSocketService {
   }
 
   private gatewayIndex: number = 0;
+  private customWsUrl: string | null = null;
   private readonly GATEWAYS = [
     'wss://ws.derivws.com/websockets/v3',
     'wss://blue.derivws.com/websockets/v3',
     'wss://green.derivws.com/websockets/v3',
     'wss://red.derivws.com/websockets/v3',
   ];
+
+  public connectWithOtpUrl(otpWsUrl: string): void {
+    this.customWsUrl = otpWsUrl;
+    this.isSimulated = false;
+    this.stopSimulation();
+    this.reconnect();
+  }
+
+  public clearCustomWsUrl(): void {
+    this.customWsUrl = null;
+  }
 
   public connect(): void {
     if (this.isSimulated) {
@@ -159,7 +171,7 @@ class DerivWebSocketService {
 
     this.notifyStatus('connecting', 0);
     const baseGateway = this.GATEWAYS[this.gatewayIndex % this.GATEWAYS.length];
-    const url = `${baseGateway}?app_id=${this.appId}&l=EN&brand=deriv`;
+    const url = this.customWsUrl || `${baseGateway}?app_id=${this.appId}&l=EN&brand=deriv`;
 
     try {
       this.ws = new WebSocket(url);
@@ -169,8 +181,8 @@ class DerivWebSocketService {
         this.startHeartbeat();
         this.notifyStatus('connected', this.pingMs);
 
-        // If user provided a token, authorize
-        if (this.token) {
+        // Only send legacy { authorize } if a PAT token is set and we are not using an OTP URL
+        if (this.token && !this.customWsUrl && !this.token.startsWith('ory_at_')) {
           this.authorize(this.token).catch(() => {});
         }
 

@@ -43,11 +43,42 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'digits' | 'multipliers'>('digits');
 
   // 3. User Authentication State
-  const [userAccount, setUserAccount] = useState<UserAuthAccount>({
-    isAuthorized: false,
-    token: derivWs.getToken(),
-    appId: derivWs.getAppId(),
-    isTradeEnabled: false,
+  const [userAccount, setUserAccount] = useState<UserAuthAccount>(() => {
+    try {
+      const raw = sessionStorage.getItem('digitscope_oauth_session');
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          access_token?: string;
+          expires_at?: number;
+          client_id?: string;
+          scope?: string;
+          accounts?: Array<{ accountId: string; currency?: string; balance?: number; accountType?: string }>;
+        };
+        if (parsed.access_token && parsed.expires_at && Date.now() < parsed.expires_at) {
+          const first = parsed.accounts?.[0];
+          return {
+            isAuthorized: true,
+            authMethod: 'oauth2',
+            token: parsed.access_token,
+            appId: parsed.client_id || derivWs.getAppId(),
+            expiresAt: parsed.expires_at,
+            scope: parsed.scope,
+            accounts: parsed.accounts,
+            loginid: first?.accountId || `OAuth App #${parsed.client_id}`,
+            balance: first?.balance,
+            currency: first?.currency || 'USD',
+            isTradeEnabled: (parsed.scope || '').includes('trade'),
+          };
+        }
+        sessionStorage.removeItem('digitscope_oauth_session');
+      }
+    } catch {}
+    return {
+      isAuthorized: false,
+      token: derivWs.getToken(),
+      appId: derivWs.getAppId(),
+      isTradeEnabled: false,
+    };
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 

@@ -87,8 +87,26 @@ export interface OpenContract {
   is_valid_to_sell?: number;
 }
 
+export interface DerivRestAccount {
+  accountId: string;
+  currency?: string;
+  balance?: number;
+  accountType?: string;
+}
+
+export interface OAuthSessionResult {
+  access_token: string;
+  expires_in: number;
+  token_type: string;
+  expires_at: number;
+  client_id: string;
+  scope: string;
+  accounts?: DerivRestAccount[];
+}
+
 export interface UserAuthAccount {
   isAuthorized: boolean;
+  authMethod?: 'oauth2' | 'pat' | 'demo';
   token: string;
   appId: string;
   loginid?: string;
@@ -96,6 +114,10 @@ export interface UserAuthAccount {
   currency?: string;
   email?: string;
   isTradeEnabled: boolean;
+  expiresAt?: number;
+  scope?: string;
+  accounts?: DerivRestAccount[];
+  otpWsUrl?: string;
 }
 
 export interface ConnectionState {
