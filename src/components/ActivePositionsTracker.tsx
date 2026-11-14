@@ -1,15 +1,17 @@
-import { CheckCircle2, Clock, DollarSign, XCircle } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import React from 'react';
 import { derivWs } from '../services/derivWs';
 import { OpenContract } from '../types/deriv';
 
 interface ActivePositionsTrackerProps {
   contracts: OpenContract[];
+  currency?: string;
   onSellSuccess?: (contractId: number) => void;
 }
 
 export const ActivePositionsTracker: React.FC<ActivePositionsTrackerProps> = ({
   contracts,
+  currency = 'USD',
   onSellSuccess,
 }) => {
   if (contracts.length === 0) return null;
@@ -24,15 +26,15 @@ export const ActivePositionsTracker: React.FC<ActivePositionsTrackerProps> = ({
   };
 
   return (
-    <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800/80 shadow-lg space-y-3">
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+    <div className="p-4 rounded-2xl bg-[#121916] border border-[#24322C] space-y-3">
+      <div className="flex items-center justify-between pb-2.5 border-b border-[#24322C]">
         <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-cyan-400" />
+          <Clock className="w-4 h-4 text-[#34D399]" />
           <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-            Open Contract Tracker & Early Exit ({contracts.length})
+            Open Contracts ({contracts.length})
           </h4>
         </div>
-        <span className="text-[10px] text-slate-400 font-mono">Real-time P/L Stream</span>
+        <span className="text-[11px] text-[#9FB3AA] font-mono">Real-time P/L</span>
       </div>
 
       <div className="space-y-2">
@@ -41,48 +43,50 @@ export const ActivePositionsTracker: React.FC<ActivePositionsTrackerProps> = ({
           return (
             <div
               key={c.contract_id}
-              className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono"
+              className="p-3 rounded-xl bg-[#18221E] border border-[#24322C] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono"
             >
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-white">{c.contract_type}</span>
-                  <span className="text-slate-400">#{c.contract_id}</span>
+                  <span className="text-[#8DA399]">#{c.contract_id}</span>
                   <span
-                    className={`px-1.5 py-0.2 rounded text-[10px] uppercase font-semibold ${
+                    className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${
                       c.status === 'open'
-                        ? 'bg-cyan-950 text-cyan-400 border border-cyan-800'
+                        ? 'bg-[#F28C28]/15 text-[#FFB56B] border border-[#F28C28]/40'
                         : c.status === 'won'
-                        ? 'bg-emerald-950 text-emerald-400'
-                        : 'bg-rose-950 text-rose-400'
+                        ? 'bg-[#0F5C45]/40 text-[#6EE7B7] border border-[#34D399]/30'
+                        : 'bg-red-500/15 text-red-300 border border-red-500/30'
                     }`}
                   >
                     {c.status}
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  Stake: ${c.buy_price.toFixed(2)} · Entry Spot: {c.entry_tick || '---'}
+                <div className="text-[11px] text-[#9FB3AA] mt-1">
+                  Stake: {currency} {c.buy_price.toFixed(2)} · Entry: {c.entry_tick || '---'}
                 </div>
               </div>
 
               {/* Live P/L and Action */}
-              <div className="flex items-center justify-between sm:justify-end gap-4">
-                <div className="text-right">
+              <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#24322C]">
+                <div className="sm:text-right">
                   <div
-                    className={`font-extrabold text-sm ${
-                      isProfitable ? 'text-emerald-400' : 'text-rose-400'
+                    className={`font-extrabold text-sm tabular-nums ${
+                      isProfitable ? 'text-[#34D399]' : 'text-red-400'
                     }`}
                   >
-                    {isProfitable ? '+' : ''}${c.profit.toFixed(2)}
+                    {isProfitable ? '+' : ''}
+                    {currency} {c.profit.toFixed(2)}
                   </div>
-                  <div className="text-[10px] text-slate-400">
-                    ({isProfitable ? '+' : ''}{c.profit_percentage.toFixed(1)}%)
+                  <div className="text-[10px] text-[#9FB3AA] tabular-nums">
+                    ({isProfitable ? '+' : ''}
+                    {c.profit_percentage.toFixed(1)}%)
                   </div>
                 </div>
 
                 {c.status === 'open' && (
                   <button
                     onClick={() => handleSell(c.contract_id)}
-                    className="px-3 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white font-bold text-xs transition-colors cursor-pointer shadow-sm"
+                    className="px-3 py-1.5 rounded-lg bg-[#F28C28] hover:bg-[#FF9E3D] text-[#0B100E] font-extrabold text-xs transition-colors cursor-pointer shrink-0"
                   >
                     Close Position
                   </button>

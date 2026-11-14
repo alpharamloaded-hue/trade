@@ -583,25 +583,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   })();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 relative max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="w-full max-w-lg rounded-2xl bg-[#121916] border border-[#2C3E36] shadow-2xl p-4 sm:p-6 relative max-h-[92dvh] overflow-y-auto">
         <button
           onClick={() => {
             stopOAuthWait();
             onClose();
           }}
-          className="absolute right-4 top-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+          className="absolute right-3.5 top-3.5 sm:right-4 sm:top-4 p-1.5 rounded-lg text-[#9FB3AA] hover:text-white hover:bg-[#18221E] transition-colors cursor-pointer"
+          aria-label="Close account modal"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-cyan-950/60 border border-cyan-800/60 flex items-center justify-center text-cyan-400">
+        <div className="flex items-center gap-3 mb-5 pr-8">
+          <div className="w-10 h-10 rounded-xl bg-[#0F5C45]/35 border border-[#34D399]/35 flex items-center justify-center text-[#34D399] shrink-0">
             <KeyRound className="w-5 h-5" />
           </div>
           <div>
             <h3 className="text-base font-bold text-white">Deriv Account & OAuth 2.0</h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-[#9FB3AA]">
               PKCE OAuth 2.0 login, API token, or instant virtual demo
             </p>
           </div>
@@ -611,19 +612,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {userAccount.isAuthorized ? (
           <div className="space-y-4">
             <div
-              className={`p-4 rounded-xl border space-y-2.5 ${
+              className={`p-3.5 sm:p-4 rounded-xl border space-y-2.5 ${
                 isTokenExpired
-                  ? 'bg-amber-950/30 border-amber-800/60'
-                  : 'bg-emerald-950/35 border-emerald-800/60'
+                  ? 'bg-[#F28C28]/12 border-[#F28C28]/40'
+                  : 'bg-[#0F5C45]/25 border-[#34D399]/35'
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span
                   className={`flex items-center gap-1.5 text-xs font-bold ${
-                    isTokenExpired ? 'text-amber-400' : 'text-emerald-400'
+                    isTokenExpired ? 'text-[#FFB56B]' : 'text-[#34D399]'
                   }`}
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>
                     {userAccount.authMethod === 'oauth2'
                       ? isTokenExpired
@@ -643,12 +644,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300 font-mono">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#B8C7C0] font-mono">
                 <span>
                   Active ID: <strong className="text-white">{userAccount.loginid}</strong>
                 </span>
                 {remainingLabel && (
-                  <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1 text-[11px] text-[#9FB3AA]">
                     <Clock className="w-3 h-3" />
                     <span>{remainingLabel}</span>
                   </span>
@@ -656,8 +657,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               {userAccount.scope && (
-                <div className="text-[11px] font-mono text-slate-400">
-                  Scopes: <span className="text-cyan-300">{userAccount.scope}</span>
+                <div className="text-[11px] font-mono text-[#9FB3AA] break-all">
+                  Scopes: <span className="text-[#6EE7B7] font-semibold">{userAccount.scope}</span>
                 </div>
               )}
 
@@ -667,7 +668,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type="button"
                     disabled={isLoading}
                     onClick={handleRefreshAccounts}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-xs text-slate-200 font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18221E] border border-[#2C3E36] hover:border-[#34D399]/50 text-xs text-white font-medium transition-colors cursor-pointer disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                     <span>Refresh Accounts</span>
@@ -676,7 +677,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleStartOAuth2()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs text-white font-semibold transition-colors cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F28C28] hover:bg-[#FF9E3D] text-xs text-[#0B100E] font-extrabold transition-colors cursor-pointer"
                     >
                       <KeyRound className="w-3.5 h-3.5" />
                       <span>Renew Access Token</span>
@@ -691,24 +692,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               userAccount.accounts &&
               userAccount.accounts.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold text-slate-300">
+                  <div className="text-xs font-semibold text-white">
                     Options Accounts (Obtain OTP WebSocket)
                   </div>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto">
                     {userAccount.accounts.map((acc) => {
                       const isCurrent = acc.accountId === userAccount.loginid;
                       return (
                         <div
                           key={acc.accountId}
-                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs font-mono ${
+                          className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono ${
                             isCurrent
-                              ? 'bg-cyan-950/30 border-cyan-700/60'
-                              : 'bg-slate-950/60 border-slate-800'
+                              ? 'bg-[#0F5C45]/30 border-[#34D399]/45'
+                              : 'bg-[#18221E] border-[#2C3E36]'
                           }`}
                         >
-                          <div>
-                            <div className="font-bold text-white">{acc.accountId}</div>
-                            <div className="text-[11px] text-slate-400">
+                          <div className="min-w-0">
+                            <div className="font-bold text-white truncate">{acc.accountId}</div>
+                            <div className="text-[11px] text-[#9FB3AA] tabular-nums">
                               {acc.accountType || 'options'} · {acc.currency || 'USD'}{' '}
                               {acc.balance !== undefined ? acc.balance.toFixed(2) : '--'}
                             </div>
@@ -717,7 +718,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             type="button"
                             disabled={isLoading}
                             onClick={() => handleConnectOtpWs(acc)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                            className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#0F5C45] hover:bg-[#147558] text-white text-[11px] font-semibold cursor-pointer disabled:opacity-50 shrink-0"
                           >
                             <Wifi className="w-3 h-3" />
                             <span>{isCurrent && userAccount.otpWsUrl ? 'OTP Active' : 'Connect OTP'}</span>
@@ -730,20 +731,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
             {errorMsg && (
-              <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-800/60 text-xs text-rose-300">
+              <div className="p-2.5 rounded-xl bg-red-500/12 border border-red-500/40 text-xs text-red-300 font-medium">
                 {errorMsg}
               </div>
             )}
 
             {successMsg && (
-              <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300">
+              <div className="p-2.5 rounded-xl bg-[#0F5C45]/30 border border-[#34D399]/35 text-xs text-[#6EE7B7] font-medium">
                 {successMsg}
               </div>
             )}
 
             <button
               onClick={handleDisconnect}
-              className="w-full py-2 rounded-xl bg-rose-950/50 border border-rose-800/60 text-rose-300 text-xs font-semibold hover:bg-rose-900/50 transition-colors cursor-pointer"
+              className="w-full py-2.5 rounded-xl bg-red-500/12 border border-red-500/35 text-red-300 text-xs font-bold hover:bg-red-500/20 transition-colors cursor-pointer"
             >
               Disconnect Account
             </button>
@@ -751,41 +752,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         ) : (
           <div className="space-y-4">
             {/* Quick 1-Click Demo Option */}
-            <div className="p-3.5 rounded-xl bg-gradient-to-r from-cyan-950/50 to-slate-900 border border-cyan-800/50">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <div className="p-3.5 rounded-xl bg-[#0F5C45]/25 border border-[#34D399]/30">
+              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#F28C28]" />
                   <span>Instant Virtual Demo Mode</span>
                 </span>
-                <span className="text-[10px] font-mono text-emerald-400 font-semibold">
+                <span className="text-[10px] font-mono text-[#34D399] font-bold">
                   $10,000 USD Virtual
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed mb-2.5">
+              <p className="text-[11px] text-[#B8C7C0] leading-relaxed mb-2.5">
                 Test the digit heatmap, pattern alerts, and multiplier risk model immediately with no login required.
               </p>
               <button
                 type="button"
                 onClick={handleDemoLogin}
-                className="w-full py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                className="w-full py-2 rounded-lg bg-[#F28C28] hover:bg-[#FF9E3D] text-[#0B100E] font-extrabold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
-                <Zap className="w-3.5 h-3.5 fill-white" />
+                <Zap className="w-3.5 h-3.5 fill-current" />
                 <span>Launch Virtual Demo Mode</span>
               </button>
             </div>
 
             {/* Auth Method Switcher */}
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#18221E] border border-[#2C3E36] text-[11px] sm:text-xs">
               <button
                 type="button"
                 onClick={() => {
                   setAuthTab('oauth2');
                   setErrorMsg(null);
                 }}
-                className={`py-2 rounded-lg font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                className={`py-2 px-2 rounded-lg font-bold transition-colors cursor-pointer truncate ${
                   authTab === 'oauth2'
-                    ? 'bg-slate-800 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#0F5C45] text-white'
+                    : 'text-[#9FB3AA] hover:text-white'
                 }`}
               >
                 Deriv OAuth 2.0 (PKCE)
@@ -796,10 +797,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setAuthTab('pat');
                   setErrorMsg(null);
                 }}
-                className={`py-2 rounded-lg font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                className={`py-2 px-2 rounded-lg font-bold transition-colors cursor-pointer truncate ${
                   authTab === 'pat'
-                    ? 'bg-slate-800 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#0F5C45] text-white'
+                    : 'text-[#9FB3AA] hover:text-white'
                 }`}
               >
                 API Token (PAT)
@@ -810,15 +811,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="space-y-3.5">
                 {/* App ID / client_id */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-300">
+                  <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                    <label className="text-xs font-semibold text-[#EBF2EE]">
                       Registered App ID (client_id)
                     </label>
                     <a
                       href="https://developers.deriv.com/dashboard"
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 font-mono"
+                      className="text-[11px] text-[#34D399] hover:text-[#F28C28] hover:underline flex items-center gap-1 font-mono font-semibold"
                     >
                       <span>Deriv Dashboard</span>
                       <ExternalLink className="w-3 h-3" />
@@ -833,10 +834,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }
                     value={appIdInput}
                     onChange={(e) => setAppIdInput(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
+                    className="w-full px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-xs text-white placeholder-[#7B9187] focus:outline-hidden focus:border-[#34D399] font-mono"
                   />
                   {!hasServerAppId && !appIdInput.trim() && (
-                    <p className="mt-1 text-[11px] text-amber-300/90">
+                    <p className="mt-1 text-[11px] text-[#FFB56B] font-medium">
                       Required: paste the App ID from your OAuth 2.0 app on developers.deriv.com (sample ID 1089 causes a 404).
                     </p>
                   )}
@@ -844,7 +845,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 {/* Exact Redirect URI Display & Copy */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-[#EBF2EE] mb-1">
                     Required Redirect URL (Add in Deriv App Settings)
                   </label>
                   <div className="flex items-center gap-1.5">
@@ -852,16 +853,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       type="text"
                       readOnly
                       value={redirectUri}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] text-cyan-300 font-mono focus:outline-hidden"
+                      className="w-full min-w-0 px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-[11px] text-[#6EE7B7] font-mono font-medium focus:outline-hidden"
                     />
                     <button
                       type="button"
                       onClick={handleCopyRedirect}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                      className="px-3 py-2 rounded-xl bg-[#18221E] hover:bg-[#24322C] border border-[#2C3E36] text-white text-xs font-semibold flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
                     >
                       {copiedRedirect ? (
                         <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <Check className="w-3.5 h-3.5 text-[#34D399]" />
                           <span>Copied</span>
                         </>
                       ) : (
@@ -876,10 +877,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 {/* Scopes Selection */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-[#EBF2EE] mb-1.5">
                     Requested Scopes
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {AVAILABLE_SCOPES.map((sc) => {
                       const active = selectedScopes.includes(sc.id);
                       return (
@@ -889,12 +890,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           onClick={() => toggleScope(sc.id)}
                           className={`p-2 rounded-xl border text-left transition-colors cursor-pointer ${
                             active
-                              ? 'bg-cyan-950/40 border-cyan-700/70 text-cyan-200'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                              ? 'bg-[#0F5C45]/35 border-[#34D399]/60 text-white'
+                              : 'bg-[#18221E] border-[#2C3E36] text-[#9FB3AA] hover:border-[#34D399]/40'
                           }`}
                         >
-                          <div className="text-[11px] font-mono font-bold">{sc.label}</div>
-                          <div className="text-[10px] text-slate-400 truncate">{sc.desc}</div>
+                          <div className="text-[11px] font-mono font-bold text-[#6EE7B7]">{sc.label}</div>
+                          <div className="text-[10px] text-[#9FB3AA] truncate">{sc.desc}</div>
                         </button>
                       );
                     })}
@@ -907,7 +908,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type="button"
                     disabled={oauthWaiting}
                     onClick={() => handleStartOAuth2()}
-                    className="sm:col-span-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    className="sm:col-span-2 py-2.5 px-4 rounded-xl bg-[#0F5C45] hover:bg-[#147558] text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
                   >
                     <KeyRound className="w-3.5 h-3.5" />
                     <span>
@@ -918,7 +919,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type="button"
                     disabled={oauthWaiting}
                     onClick={() => handleStartOAuth2('registration')}
-                    className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1"
+                    className="py-2.5 px-3 rounded-xl bg-[#18221E] hover:bg-[#24322C] text-white font-semibold text-xs border border-[#2C3E36] transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
                     <span>Sign Up</span>
@@ -926,12 +927,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 {oauthWaiting && (
-                  <div className="p-2.5 rounded-lg bg-cyan-950/30 border border-cyan-800/50 text-[11px] text-cyan-300 flex items-center justify-between">
+                  <div className="p-2.5 rounded-xl bg-[#F28C28]/12 border border-[#F28C28]/40 text-[11px] text-[#FFB56B] flex items-center justify-between gap-2">
                     <span>Complete login in the popup window. Exchanging PKCE code on server...</span>
                     <button
                       type="button"
                       onClick={stopOAuthWait}
-                      className="text-slate-300 hover:text-white underline ml-2 cursor-pointer shrink-0"
+                      className="text-white font-semibold hover:underline ml-2 cursor-pointer shrink-0"
                     >
                       Cancel
                     </button>
@@ -942,8 +943,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               /* PAT Form (supports both developers.deriv.com REST PAT & legacy app.deriv.com WS token) */
               <div className="space-y-3.5">
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-300">
+                  <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                    <label className="text-xs font-semibold text-[#EBF2EE]">
                       Deriv API Token / PAT
                     </label>
                     <div className="flex items-center gap-2 text-[11px] font-mono">
@@ -951,17 +952,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         href="https://developers.deriv.com/dashboard"
                         target="_blank"
                         rel="noreferrer"
-                        className="text-cyan-400 hover:underline flex items-center gap-0.5"
+                        className="text-[#34D399] hover:text-[#F28C28] hover:underline flex items-center gap-0.5 font-semibold"
                       >
                         <span>New PAT</span>
                         <ExternalLink className="w-3 h-3" />
                       </a>
-                      <span className="text-slate-600">·</span>
+                      <span className="text-[#4B5F57]">·</span>
                       <a
                         href="https://app.deriv.com/account/api-token"
                         target="_blank"
                         rel="noreferrer"
-                        className="text-slate-400 hover:text-cyan-400 hover:underline flex items-center gap-0.5"
+                        className="text-[#9FB3AA] hover:text-[#34D399] hover:underline flex items-center gap-0.5"
                       >
                         <span>Legacy WS</span>
                         <ExternalLink className="w-3 h-3" />
@@ -969,7 +970,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                   </div>
                   <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-slate-500">
+                    <span className="absolute left-3 top-2.5 text-[#7B9187]">
                       <Lock className="w-4 h-4" />
                     </span>
                     <input
@@ -977,12 +978,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       placeholder="Paste your PAT (developers.deriv.com) or legacy WS token"
                       value={tokenInput}
                       onChange={(e) => setTokenInput(e.target.value)}
-                      className="w-full pl-9 pr-9 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
+                      className="w-full pl-9 pr-9 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-xs text-white placeholder-[#7B9187] focus:outline-hidden focus:border-[#34D399] font-mono"
                     />
                     <button
                       type="button"
                       onClick={() => setShowToken((prev) => !prev)}
-                      className="absolute right-2.5 top-2 p-0.5 text-slate-400 hover:text-white cursor-pointer"
+                      className="absolute right-2.5 top-2 p-0.5 text-[#9FB3AA] hover:text-white cursor-pointer"
                       aria-label={showToken ? 'Hide token' : 'Show token'}
                     >
                       {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -991,11 +992,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-300">
+                  <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                    <label className="text-xs font-semibold text-[#EBF2EE]">
                       Registered Deriv App ID
                     </label>
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-[#9FB3AA]">
                       Required for developers.deriv.com PATs
                     </span>
                   </div>
@@ -1008,14 +1009,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }
                     value={appIdInput}
                     onChange={(e) => setAppIdInput(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
+                    className="w-full px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-xs text-white placeholder-[#7B9187] focus:outline-hidden focus:border-[#34D399] font-mono"
                   />
                 </div>
 
                 <button
                   disabled={isLoading}
                   onClick={handlePatAuthorize}
-                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 shadow-md transition-colors cursor-pointer disabled:opacity-50"
+                  className="w-full py-2.5 rounded-xl bg-[#0F5C45] hover:bg-[#147558] text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
                 >
                   {isLoading ? 'Verifying Token with Deriv...' : 'Authorize API Token'}
                 </button>
@@ -1024,32 +1025,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             {/* Error & Troubleshooting */}
             {errorMsg && (
-              <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 text-xs text-rose-300 space-y-1.5">
+              <div className="p-3 rounded-xl bg-red-500/12 border border-red-500/40 text-xs text-red-300 space-y-1.5">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="font-semibold">{errorMsg}</div>
+                  <div className="font-semibold break-words">{errorMsg}</div>
                 </div>
-                <div className="pt-1.5 border-t border-rose-900/60 text-[11px] text-slate-400 flex items-start gap-1.5">
-                  <HelpCircle className="w-3.5 h-3.5 text-amber-300 shrink-0 mt-0.5" />
+                <div className="pt-1.5 border-t border-red-500/25 text-[11px] text-[#B8C7C0] flex items-start gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5 text-[#F28C28] shrink-0 mt-0.5" />
                   <span>
-                    For OAuth 2.0, ensure the <strong>Redirect URL</strong> above matches your Deriv app registration and that your selected scopes are enabled on your app.
+                    For OAuth 2.0, ensure the <strong className="text-white">Redirect URL</strong> above matches your Deriv app registration and that your selected scopes are enabled on your app.
                   </span>
                 </div>
               </div>
             )}
 
             {successMsg && (
-              <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300">
+              <div className="p-2.5 rounded-xl bg-[#0F5C45]/30 border border-[#34D399]/35 text-xs text-[#6EE7B7] font-medium">
                 {successMsg}
               </div>
             )}
           </div>
         )}
 
-        <div className="mt-5 pt-4 border-t border-slate-800 flex items-start gap-2 text-[11px] text-slate-500">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+        <div className="mt-5 pt-4 border-t border-[#24322C] flex items-start gap-2 text-[11px] text-[#9FB3AA]">
+          <ShieldCheck className="w-4 h-4 text-[#34D399] shrink-0 mt-0.5" />
           <span>
-            <strong>PKCE & Non-Custodial Security:</strong> Authorization codes are exchanged server-side using SHA-256 PKCE verification. Access tokens are never logged and stay scoped to your browser session.
+            <strong className="text-white">PKCE & Non-Custodial Security:</strong> Authorization codes are exchanged server-side using SHA-256 PKCE verification. Access tokens are never logged and stay scoped to your browser session.
           </span>
         </div>
       </div>

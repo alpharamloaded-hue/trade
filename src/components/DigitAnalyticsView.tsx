@@ -1,7 +1,6 @@
-import { AlertCircle, ArrowUpRight, Calculator, CheckCircle2, ChevronRight, Flame, Gauge, Info, Snowflake, Target, Zap } from 'lucide-react';
+import { AlertCircle, Calculator, ChevronRight, Flame, Gauge, Snowflake, Target, Zap } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { derivWs } from '../services/derivWs';
-import { soundEffects } from '../services/soundEffects';
 import { DerivProposal, DigitStat, PatternDetection, RollingWindowSize, TickData } from '../types/deriv';
 import { calculateConfidence, calculateMartingaleLadder, MartingaleStep } from '../utils/digitAnalysis';
 
@@ -27,21 +26,17 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
   windowSize,
   onWindowChange,
   patterns,
-  latestTick,
   symbol,
   currency = 'USD',
   onInitiateOrder,
   prefillConfig,
 }) => {
-  // Strategy & Proposal state
   const [selectedDigit, setSelectedDigit] = useState<number>(0);
   const [contractType, setContractType] = useState<'DIGITMATCH' | 'DIGITDIFF'>('DIGITMATCH');
   const [stake, setStake] = useState<number>(10);
   const [activeProposal, setActiveProposal] = useState<DerivProposal | null>(null);
   const [proposalLoading, setProposalLoading] = useState<boolean>(false);
-  const [proposalError, setProposalError] = useState<string | null>(null);
 
-  // Sync with radar prefill action
   useEffect(() => {
     if (prefillConfig) {
       setContractType(prefillConfig.contractType);
@@ -50,17 +45,14 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
     }
   }, [prefillConfig]);
 
-  // Martingale Calculator Drawer
   const [showMartingale, setShowMartingale] = useState<boolean>(false);
   const [martingaleBaseStake, setMartingaleBaseStake] = useState<number>(5);
   const [martingaleMultiplier, setMartingaleMultiplier] = useState<number>(2.1);
   const [martingaleSteps, setMartingaleSteps] = useState<number>(6);
 
-  // Fetch proposal whenever digit, contractType, stake, or symbol changes
   useEffect(() => {
     let isCancelled = false;
     setProposalLoading(true);
-    setProposalError(null);
 
     derivWs
       .fetchProposal({
@@ -77,9 +69,8 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
           setProposalLoading(false);
         }
       })
-      .catch((err) => {
+      .catch(() => {
         if (!isCancelled) {
-          setProposalError(err?.message || 'Failed to fetch proposal');
           setProposalLoading(false);
         }
       });
@@ -89,17 +80,14 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
     };
   }, [selectedDigit, contractType, stake, symbol, currency]);
 
-  // Selected digit stats
   const selectedStat = digitStats.find((s) => s.digit === selectedDigit) || digitStats[0];
   const confidence = selectedStat
     ? calculateConfidence(selectedStat, windowSize)
     : { score: 50, signal: 'NEUTRAL', reason: 'Insufficient ticks' };
 
-  // Sort hottest and coldest
   const hottestDigit = [...digitStats].sort((a, b) => b.frequency - a.frequency)[0];
   const coldestDigit = [...digitStats].sort((a, b) => a.frequency - b.frequency)[0];
 
-  // Martingale ladder calculation
   const payoutFactor = contractType === 'DIGITMATCH' ? 9.2 : 1.09;
   const martingaleLadder: MartingaleStep[] = calculateMartingaleLadder(
     martingaleBaseStake,
@@ -109,22 +97,22 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       {/* 1. Header Toolbar with Rolling Window Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800/80">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-            Analysis Window:
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#121916] border border-[#24322C]">
+        <div className="flex items-center justify-between sm:justify-start gap-2">
+          <span className="text-xs font-bold text-[#9FB3AA] uppercase tracking-wider">
+            Window:
           </span>
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+          <div className="flex items-center gap-1 bg-[#18221E] p-1 rounded-lg border border-[#2C3E36]">
             {([50, 100, 500, 1000] as RollingWindowSize[]).map((size) => (
               <button
                 key={size}
                 onClick={() => onWindowChange(size)}
-                className={`px-2.5 py-1 text-xs font-mono font-medium rounded-md transition-colors cursor-pointer ${
+                className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md transition-colors cursor-pointer ${
                   windowSize === size
-                    ? 'bg-cyan-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                    ? 'bg-[#0F5C45] text-white'
+                    : 'text-[#9FB3AA] hover:text-white hover:bg-[#24322C]'
                 }`}
               >
                 {size}T
@@ -133,130 +121,127 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
           </div>
         </div>
 
-        {/* Quick Hot & Cold Indicators */}
-        <div className="flex items-center gap-3 text-xs font-mono">
+        <div className="flex items-center gap-2 text-xs font-mono flex-wrap">
           {hottestDigit && (
-            <div className="flex items-center gap-1.5 text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-1 rounded-lg">
+            <div className="flex items-center gap-1.5 text-[#6EE7B7] bg-[#0F5C45]/35 border border-[#34D399]/30 px-2.5 py-1 rounded-lg font-bold tabular-nums">
               <Flame className="w-3.5 h-3.5" />
-              <span>Hot: {hottestDigit.digit} ({hottestDigit.frequency}%)</span>
+              <span>
+                Hot: {hottestDigit.digit} ({hottestDigit.frequency}%)
+              </span>
             </div>
           )}
           {coldestDigit && (
-            <div className="flex items-center gap-1.5 text-rose-400 bg-rose-950/40 border border-rose-800/40 px-2 py-1 rounded-lg">
+            <div className="flex items-center gap-1.5 text-[#FFB56B] bg-[#F28C28]/15 border border-[#F28C28]/40 px-2.5 py-1 rounded-lg font-bold tabular-nums">
               <Snowflake className="w-3.5 h-3.5" />
-              <span>Cold: {coldestDigit.digit} ({coldestDigit.frequency}%)</span>
+              <span>
+                Cold: {coldestDigit.digit} ({coldestDigit.frequency}%)
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 2. Digit Frequency Heatmap & Bar Chart (0 to 9) */}
-      <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800/80 shadow-xl">
-        <div className="flex items-center justify-between mb-4">
+      {/* 2. Digit Frequency Heatmap & Bar Chart (5x2 on mobile, 10x1 on sm+) */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-[#121916] border border-[#24322C]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Target className="w-4 h-4 text-cyan-400" />
+              <Target className="w-4 h-4 text-[#34D399]" />
               <span>Digit Frequency Distribution (0–9)</span>
             </h3>
-            <p className="text-[11px] text-slate-400">
-              Dashed line represents theoretical uniform distribution (10.0%)
+            <p className="text-[11px] text-[#9FB3AA]">
+              10.0% baseline · Tap any digit below to select it for trading
             </p>
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded bg-emerald-500 inline-block" />
-              <span>&gt;12% Hot</span>
+          <div className="flex items-center gap-3 text-[11px] font-mono text-[#9FB3AA]">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-xs bg-[#168564] inline-block" />
+              <span>&ge;12% Hot</span>
             </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded bg-rose-500 inline-block" />
-              <span>&lt;8% Cold</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-xs bg-[#F28C28] inline-block" />
+              <span>&le;8% Cold</span>
             </span>
           </div>
         </div>
 
-        {/* Bars Container */}
-        <div className="relative pt-6 pb-2">
-          {/* 10% Baseline line */}
+        <div className="relative pt-3 pb-1">
+          {/* 10% Baseline line on desktop 10-col layout */}
           <div
-            className="absolute left-0 right-0 border-b border-dashed border-cyan-500/50 z-10 flex items-center justify-end pr-1 pointer-events-none"
-            style={{ bottom: '70px' }} // Height corresponding to 10% baseline in 140px chart
+            className="hidden sm:flex absolute left-0 right-0 border-b border-dashed border-[#34D399]/40 z-10 items-center justify-end pr-1 pointer-events-none"
+            style={{ bottom: '76px' }}
           >
-            <span className="text-[10px] font-mono text-cyan-400 bg-slate-900/90 px-1 rounded -translate-y-2">
+            <span className="text-[10px] font-mono font-bold text-[#6EE7B7] bg-[#121916] px-1.5 rounded -translate-y-2.5">
               10.0% Mean
             </span>
           </div>
 
-          <div className="grid grid-cols-10 gap-1.5 sm:gap-2.5 h-44 items-end">
+          <div className="grid grid-cols-5 sm:grid-cols-10 gap-x-2 gap-y-4 sm:gap-2 items-end">
             {digitStats.map((stat) => {
-              // Map percentage (0 to 25%) to height percentage
-              const barHeightPct = Math.min(100, Math.max(8, (stat.frequency / 22) * 100));
+              const barHeightPct = Math.min(100, Math.max(10, (stat.frequency / 22) * 100));
               const isSelected = stat.digit === selectedDigit;
 
-              let barColor = 'bg-slate-700 hover:bg-slate-600';
-              if (stat.isHot) barColor = 'bg-emerald-500 hover:bg-emerald-400';
-              else if (stat.isCold) barColor = 'bg-rose-500 hover:bg-rose-400';
+              let barColor = 'bg-[#4B5F57] group-hover:bg-[#647D73]';
+              if (stat.isHot) barColor = 'bg-[#168564] group-hover:bg-[#1E9E78]';
+              else if (stat.isCold) barColor = 'bg-[#F28C28] group-hover:bg-[#FF9E3D]';
 
               return (
                 <button
                   key={stat.digit}
                   onClick={() => setSelectedDigit(stat.digit)}
-                  className={`flex flex-col items-center justify-end h-full group cursor-pointer focus:outline-hidden transition-all ${
-                    isSelected ? 'scale-105' : ''
+                  className={`flex flex-col items-center justify-end group cursor-pointer focus:outline-hidden transition-transform ${
+                    isSelected ? 'scale-[1.03]' : ''
                   }`}
                 >
-                  {/* Frequency percentage label above bar */}
                   <span
-                    className={`text-[10px] font-mono font-bold mb-1 transition-colors ${
+                    className={`text-[10px] font-mono font-bold mb-1 tabular-nums ${
                       isSelected
-                        ? 'text-cyan-300'
+                        ? 'text-white'
                         : stat.isHot
-                        ? 'text-emerald-400'
+                        ? 'text-[#34D399]'
                         : stat.isCold
-                        ? 'text-rose-400'
-                        : 'text-slate-400'
+                        ? 'text-[#FFB56B]'
+                        : 'text-[#B8C7C0]'
                     }`}
                   >
                     {stat.frequency}%
                   </span>
 
-                  {/* Vertical bar */}
-                  <div className="w-full bg-slate-950/60 rounded-t-md p-0.5 flex flex-col justify-end h-32">
+                  <div className="w-full bg-[#18221E] border border-[#24322C] rounded-t-md p-0.5 flex flex-col justify-end h-24 sm:h-32">
                     <div
-                      className={`w-full rounded-t-sm transition-all duration-300 relative shadow-sm ${barColor} ${
-                        isSelected ? 'ring-2 ring-cyan-400' : ''
+                      className={`w-full rounded-t-xs transition-all duration-300 ${barColor} ${
+                        isSelected ? 'ring-2 ring-[#F28C28] ring-offset-1 ring-offset-[#121916]' : ''
                       }`}
                       style={{ height: `${barHeightPct}%` }}
                     />
                   </div>
 
-                  {/* Digit Button Label */}
                   <div
-                    className={`mt-2 w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-mono text-xs sm:text-sm font-extrabold transition-all ${
+                    className={`mt-1.5 w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs sm:text-sm font-extrabold transition-all ${
                       isSelected
-                        ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30 font-black'
-                        : 'bg-slate-800 text-slate-300 group-hover:bg-slate-700'
+                        ? 'bg-[#0F5C45] text-white ring-2 ring-[#F28C28]'
+                        : 'bg-[#18221E] text-white border border-[#2C3E36] group-hover:border-[#34D399]/50'
                     }`}
                   >
                     {stat.digit}
                   </div>
 
-                  {/* Actionable Signal Badge or Deviation */}
                   {stat.currentStreak >= 18 ? (
-                    <span className="text-[8px] font-black font-mono text-amber-300 bg-amber-950 border border-amber-700/80 px-1 rounded mt-0.5 animate-pulse whitespace-nowrap shadow-xs">
+                    <span className="text-[8px] font-black font-mono text-[#0B100E] bg-[#F28C28] px-1.5 py-0.2 rounded mt-1 animate-pulse whitespace-nowrap">
                       MATCH
                     </span>
                   ) : stat.isCold && stat.frequency <= 6.5 ? (
-                    <span className="text-[8px] font-black font-mono text-cyan-300 bg-cyan-950 border border-cyan-700/80 px-1 rounded mt-0.5 whitespace-nowrap shadow-xs">
+                    <span className="text-[8px] font-black font-mono text-white bg-[#0F5C45] border border-[#34D399]/40 px-1.5 py-0.2 rounded mt-1 whitespace-nowrap">
                       DIFFER
                     </span>
                   ) : (
                     <span
-                      className={`text-[9px] font-mono mt-0.5 ${
+                      className={`text-[9px] font-mono font-semibold mt-1 tabular-nums ${
                         stat.deviation > 0
-                          ? 'text-emerald-400'
+                          ? 'text-[#34D399]'
                           : stat.deviation < 0
-                          ? 'text-rose-400'
-                          : 'text-slate-500'
+                          ? 'text-[#FFB56B]'
+                          : 'text-[#8DA399]'
                       }`}
                     >
                       {stat.deviation > 0 ? `+${stat.deviation}%` : `${stat.deviation}%`}
@@ -270,18 +255,18 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
       </div>
 
       {/* 3. Digit Drought & Streak Tracker */}
-      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800/80 shadow-md">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
+      <div className="p-4 rounded-2xl bg-[#121916] border border-[#24322C]">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">
               Digit Drought & Absence Streaks
             </h4>
-            <span className="text-[10px] text-slate-400 font-mono">
-              (Ticks since last appearance)
+            <span className="text-[10px] text-[#9FB3AA] font-mono">
+              (Ticks since last seen)
             </span>
           </div>
-          <span className="text-[10px] text-amber-400 font-mono">
-            Alert Threshold: 18+ Ticks
+          <span className="text-[10px] text-[#FFB56B] font-mono font-bold bg-[#F28C28]/15 px-2 py-0.5 rounded border border-[#F28C28]/35">
+            Alert: 18+ Ticks
           </span>
         </div>
 
@@ -294,39 +279,38 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
               <div
                 key={stat.digit}
                 onClick={() => setSelectedDigit(stat.digit)}
-                className={`p-2 rounded-lg border text-center cursor-pointer transition-all ${
+                className={`p-2 rounded-xl border text-center cursor-pointer transition-all ${
                   stat.digit === selectedDigit
-                    ? 'border-cyan-500 bg-cyan-950/40 shadow-sm'
+                    ? 'border-[#34D399] bg-[#0F5C45]/30'
                     : isHighDrought
-                    ? 'border-amber-700/80 bg-amber-950/30 animate-pulse'
-                    : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                    ? 'border-[#F28C28] bg-[#F28C28]/15 animate-pulse'
+                    : 'border-[#24322C] bg-[#18221E] hover:border-[#34D399]/50'
                 }`}
               >
-                <div className="flex items-center justify-between text-[10px] font-mono mb-1">
-                  <span className="font-bold text-slate-300">{stat.digit}</span>
+                <div className="flex items-center justify-between text-[10px] font-mono mb-1 tabular-nums">
+                  <span className="font-extrabold text-white">{stat.digit}</span>
                   <span
                     className={`font-bold ${
-                      isHighDrought ? 'text-amber-400' : 'text-slate-400'
+                      isHighDrought ? 'text-[#FFB56B]' : 'text-[#B8C7C0]'
                     }`}
                   >
                     {stat.currentStreak}t
                   </span>
                 </div>
-                {/* Drought bar */}
-                <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-1.5 w-full bg-[#0E1512] rounded-full overflow-hidden">
                   <div
                     className={`h-full ${
                       isHighDrought
-                        ? 'bg-amber-400'
+                        ? 'bg-[#F28C28]'
                         : stat.currentStreak >= 10
-                        ? 'bg-cyan-500'
-                        : 'bg-slate-600'
+                        ? 'bg-[#168564]'
+                        : 'bg-[#5A7068]'
                     }`}
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <div className="text-[9px] text-slate-400 font-mono mt-1">
-                  Max: {stat.maxStreak}t
+                <div className="text-[9px] text-[#8DA399] font-mono mt-1 tabular-nums">
+                  Max {stat.maxStreak}t
                 </div>
               </div>
             );
@@ -335,57 +319,57 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
       </div>
 
       {/* 4. Tactical Signals & Pattern Scanner Feed */}
-      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800/80 shadow-md">
-        <div className="flex items-center justify-between mb-3">
+      <div className="p-4 rounded-2xl bg-[#121916] border border-[#24322C]">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-amber-400" />
+            <Zap className="w-4 h-4 text-[#F28C28]" />
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-              Real-Time Signal & Pattern Scanner
+              Real-Time Pattern Scanner
             </h4>
           </div>
-          <span className="text-[10px] text-slate-400 font-mono">
-            Automated Audio Chimes Enabled
+          <span className="text-[10px] text-[#9FB3AA] font-mono">
+            Live X2X · Twin · Drought Detection
           </span>
         </div>
 
         {patterns.length === 0 ? (
-          <div className="p-4 rounded-lg bg-slate-950/60 border border-slate-800/60 text-center text-xs text-slate-400 font-mono">
-            Scanning 1-second ticks for X2X reversals, twin pairs, and statistical drought streaks...
+          <div className="p-4 rounded-xl bg-[#18221E] border border-[#24322C] text-center text-xs text-[#9FB3AA] font-mono">
+            Scanning incoming ticks for X2X reversals, twin pairs, and statistical droughts...
           </div>
         ) : (
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
             {patterns.slice(0, 4).map((pattern) => (
               <div
                 key={pattern.id}
-                className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/90 hover:border-slate-700 transition-colors"
+                className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-[#18221E] border border-[#24322C] hover:border-[#34D399]/50 transition-colors"
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <div
-                    className={`w-7 h-7 rounded-md flex items-center justify-center font-mono text-xs font-bold shrink-0 ${
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-[11px] font-extrabold shrink-0 ${
                       pattern.type === 'X2X'
-                        ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                        ? 'bg-[#0F5C45] text-white border border-[#34D399]/40'
                         : pattern.type === 'TWIN'
-                        ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
-                        : 'bg-amber-950 text-amber-300 border border-amber-800'
+                        ? 'bg-[#0F5C45]/35 text-[#6EE7B7] border border-[#34D399]/35'
+                        : 'bg-[#F28C28]/15 text-[#FFB56B] border border-[#F28C28]/40'
                     }`}
                   >
                     {pattern.type === 'X2X' ? 'X2X' : pattern.type === 'TWIN' ? '2X' : 'DR'}
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold text-slate-200">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white truncate">
                       {pattern.title}
                     </div>
-                    <div className="text-[10px] text-slate-400 line-clamp-1">
+                    <div className="text-[11px] text-[#9FB3AA] truncate">
                       {pattern.description}
                     </div>
                   </div>
                 </div>
 
-                <div className="text-right shrink-0 ml-3">
-                  <div className="text-xs font-mono font-bold text-cyan-400">
+                <div className="text-right shrink-0">
+                  <div className="text-xs font-mono font-extrabold text-[#34D399] tabular-nums">
                     {pattern.confidence}% Edge
                   </div>
-                  <div className="text-[9px] text-slate-500 font-mono">
+                  <div className="text-[10px] text-[#8DA399] font-mono tabular-nums">
                     {new Date(pattern.timestamp * 1000).toLocaleTimeString()}
                   </div>
                 </div>
@@ -398,51 +382,50 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
       {/* 5. Contract Proposal Preview (Match / Differ Execution) */}
       <div
         id="order-execution-card"
-        className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800/90 shadow-xl"
+        className="p-4 sm:p-5 rounded-2xl bg-[#121916] border border-[#1E8766]/60"
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Gauge className="w-4 h-4 text-cyan-400" />
-              <span>Contract Proposal Preview & Order Form</span>
+              <Gauge className="w-4 h-4 text-[#34D399]" />
+              <span>Order Form & Live Payout Quote</span>
             </h3>
-            <p className="text-[11px] text-slate-400">
-              Live odds streamed directly from Deriv proposal engine
+            <p className="text-[11px] text-[#9FB3AA]">
+              Live odds streamed from Deriv proposal engine
             </p>
           </div>
           <button
             onClick={() => setShowMartingale(!showMartingale)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-[#18221E] hover:bg-[#1E2B26] text-[#6EE7B7] border border-[#2C3E36] transition-colors cursor-pointer"
           >
-            <Calculator className="w-3.5 h-3.5 text-cyan-400" />
+            <Calculator className="w-3.5 h-3.5 text-[#F28C28]" />
             <span>Money Management</span>
           </button>
         </div>
 
-        {/* Contract Type & Target Selector */}
+        {/* Contract Type, Target Digit & Stake */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          {/* Match vs Differ Switcher */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-bold text-[#9FB3AA] uppercase tracking-wider mb-1.5">
               Contract Type
             </label>
-            <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <div className="grid grid-cols-2 gap-1.5 bg-[#18221E] p-1 rounded-xl border border-[#2C3E36]">
               <button
                 onClick={() => setContractType('DIGITMATCH')}
-                className={`py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                className={`py-2 text-xs font-extrabold rounded-lg transition-colors cursor-pointer ${
                   contractType === 'DIGITMATCH'
-                    ? 'bg-cyan-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#0F5C45] text-white'
+                    : 'text-[#9FB3AA] hover:text-white'
                 }`}
               >
                 DIGIT MATCH
               </button>
               <button
                 onClick={() => setContractType('DIGITDIFF')}
-                className={`py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                className={`py-2 text-xs font-extrabold rounded-lg transition-colors cursor-pointer ${
                   contractType === 'DIGITDIFF'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#F28C28] text-[#0B100E]'
+                    : 'text-[#9FB3AA] hover:text-white'
                 }`}
               >
                 DIGIT DIFFER
@@ -450,20 +433,19 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
             </div>
           </div>
 
-          {/* Target Prediction Digit */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              Target Digit: <span className="text-cyan-400 font-mono font-bold">{selectedDigit}</span>
+            <label className="block text-[11px] font-bold text-[#9FB3AA] uppercase tracking-wider mb-1.5">
+              Target Digit: <span className="text-[#34D399] font-mono font-extrabold">{selectedDigit}</span>
             </label>
-            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto">
+            <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 bg-[#18221E] p-1.5 rounded-xl border border-[#2C3E36]">
               {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
                 <button
                   key={d}
                   onClick={() => setSelectedDigit(d)}
-                  className={`w-7 h-8 rounded-lg font-mono text-xs font-bold shrink-0 transition-colors cursor-pointer ${
+                  className={`h-8 rounded-lg font-mono text-xs font-extrabold transition-colors cursor-pointer ${
                     selectedDigit === d
-                      ? 'bg-cyan-500 text-slate-950 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                      ? 'bg-[#0F5C45] text-white ring-1 ring-[#F28C28]'
+                      : 'text-[#EBF2EE] hover:bg-[#24322C]'
                   }`}
                 >
                   {d}
@@ -472,31 +454,33 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
             </div>
           </div>
 
-          {/* Stake Input */}
           <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-bold text-[#9FB3AA] uppercase tracking-wider mb-1.5">
               Stake ({currency})
             </label>
             <div className="flex items-center gap-2">
               <div className="relative w-full">
-                <span className="absolute left-3 top-2.5 text-xs text-slate-500 font-mono">$</span>
                 <input
                   type="number"
                   min="0.35"
                   step="1"
                   value={stake}
                   onChange={(e) => setStake(Math.max(0.35, parseFloat(e.target.value) || 1))}
-                  className="w-full pl-6 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-sm text-white focus:outline-hidden focus:border-cyan-500"
+                  className="w-full px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] font-mono text-sm font-bold text-white focus:outline-hidden focus:border-[#34D399]"
                 />
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1 shrink-0">
                 {[5, 10, 25].map((val) => (
                   <button
                     key={val}
                     onClick={() => setStake(val)}
-                    className="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-slate-300 cursor-pointer"
+                    className={`px-2.5 py-2 rounded-lg text-[11px] font-mono font-bold cursor-pointer border ${
+                      stake === val
+                        ? 'bg-[#0F5C45] text-white border-[#34D399]/60'
+                        : 'bg-[#18221E] hover:bg-[#24322C] text-[#EBF2EE] border-[#2C3E36]'
+                    }`}
                   >
-                    ${val}
+                    {val}
                   </button>
                 ))}
               </div>
@@ -505,25 +489,31 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
         </div>
 
         {/* Live Proposal Pricing Card */}
-        <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800/80 mb-4">
+        <div className="p-4 rounded-xl bg-[#18221E] border border-[#2C3E36] mb-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
             <div>
-              <div className="text-[10px] text-slate-400 uppercase font-mono">Potential Payout</div>
-              <div className="text-lg font-mono font-extrabold text-emerald-400 tabular-nums">
-                {activeProposal ? `$${activeProposal.payout.toFixed(2)}` : '---'}
+              <div className="text-[10px] text-[#9FB3AA] uppercase font-mono font-semibold">
+                Potential Payout
+              </div>
+              <div className="text-base sm:text-lg font-mono font-extrabold text-[#34D399] tabular-nums">
+                {activeProposal ? `${currency} ${activeProposal.payout.toFixed(2)}` : '---'}
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 uppercase font-mono">Net Profit</div>
-              <div className="text-lg font-mono font-extrabold text-cyan-400 tabular-nums">
+              <div className="text-[10px] text-[#9FB3AA] uppercase font-mono font-semibold">
+                Net Profit
+              </div>
+              <div className="text-base sm:text-lg font-mono font-extrabold text-white tabular-nums">
                 {activeProposal
-                  ? `$${(activeProposal.payout - activeProposal.ask_price).toFixed(2)}`
+                  ? `${currency} ${(activeProposal.payout - activeProposal.ask_price).toFixed(2)}`
                   : '---'}
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 uppercase font-mono">Return on Stake</div>
-              <div className="text-lg font-mono font-extrabold text-purple-400 tabular-nums">
+              <div className="text-[10px] text-[#9FB3AA] uppercase font-mono font-semibold">
+                Return
+              </div>
+              <div className="text-base sm:text-lg font-mono font-extrabold text-[#F28C28] tabular-nums">
                 {activeProposal && activeProposal.ask_price > 0
                   ? `${(
                       ((activeProposal.payout - activeProposal.ask_price) /
@@ -534,16 +524,18 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 uppercase font-mono">Confidence Edge</div>
-              <div className="text-lg font-mono font-extrabold text-amber-400 tabular-nums">
+              <div className="text-[10px] text-[#9FB3AA] uppercase font-mono font-semibold">
+                Confidence Edge
+              </div>
+              <div className="text-base sm:text-lg font-mono font-extrabold text-[#34D399] tabular-nums">
                 {confidence.score}%
               </div>
             </div>
           </div>
 
-          <div className="mt-3 pt-2 border-t border-slate-800/60 text-xs text-slate-400 font-mono flex items-center justify-between">
+          <div className="mt-3 pt-2.5 border-t border-[#2C3E36] text-xs text-[#9FB3AA] font-mono flex flex-wrap items-center justify-between gap-2">
             <span>
-              Target: Last digit must {contractType === 'DIGITMATCH' ? 'MATCH' : 'DIFFER FROM'}{' '}
+              Rule: Last digit must {contractType === 'DIGITMATCH' ? 'MATCH' : 'DIFFER FROM'}{' '}
               <strong className="text-white">{selectedDigit}</strong>
             </span>
             <span>Duration: 1 Tick</span>
@@ -558,48 +550,51 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
               onInitiateOrder(activeProposal, contractType, selectedDigit);
             }
           }}
-          className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold text-sm shadow-lg shadow-cyan-950/50 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-3.5 rounded-xl bg-[#F28C28] hover:bg-[#FF9E3D] text-[#0B100E] font-extrabold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <span>
             {proposalLoading
               ? 'Fetching Live Quote...'
-              : `Review & Place ${contractType} (${selectedDigit})`}
+              : `Review & Place ${contractType} (Digit ${selectedDigit})`}
           </span>
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
 
-      {/* 6. Martingale Calculator Drawer / Modal */}
+      {/* 6. Martingale Calculator Drawer */}
       {showMartingale && (
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#121916] border border-[#24322C] space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#24322C]">
             <div className="flex items-center gap-2">
-              <Calculator className="w-4 h-4 text-cyan-400" />
+              <Calculator className="w-4 h-4 text-[#34D399]" />
               <h4 className="text-sm font-bold text-white">
                 Martingale & Money Management Ladder
               </h4>
             </div>
             <button
               onClick={() => setShowMartingale(false)}
-              className="text-xs text-slate-400 hover:text-white"
+              className="text-xs text-[#9FB3AA] hover:text-white font-semibold cursor-pointer"
             >
-              ✕ Close
+              Close
             </button>
           </div>
 
-          {/* Controls */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="text-[11px] text-slate-400 font-mono">Base Stake ($)</label>
+              <label className="text-[11px] text-[#9FB3AA] font-mono font-semibold">
+                Base Stake ({currency})
+              </label>
               <input
                 type="number"
                 value={martingaleBaseStake}
                 onChange={(e) => setMartingaleBaseStake(Math.max(1, parseFloat(e.target.value) || 1))}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-white"
+                className="w-full mt-1 px-3 py-2 rounded-lg bg-[#18221E] border border-[#2C3E36] font-mono text-xs font-bold text-white"
               />
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 font-mono">Multiplier Factor</label>
+              <label className="text-[11px] text-[#9FB3AA] font-mono font-semibold">
+                Multiplier Factor
+              </label>
               <input
                 type="number"
                 step="0.1"
@@ -607,11 +602,13 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
                 onChange={(e) =>
                   setMartingaleMultiplier(Math.max(1.1, parseFloat(e.target.value) || 2))
                 }
-                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-white"
+                className="w-full mt-1 px-3 py-2 rounded-lg bg-[#18221E] border border-[#2C3E36] font-mono text-xs font-bold text-white"
               />
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 font-mono">Max Step Rounds</label>
+              <label className="text-[11px] text-[#9FB3AA] font-mono font-semibold">
+                Max Rounds
+              </label>
               <input
                 type="number"
                 min="3"
@@ -620,38 +617,39 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
                 onChange={(e) =>
                   setMartingaleSteps(Math.min(10, Math.max(3, parseInt(e.target.value, 10) || 5)))
                 }
-                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-white"
+                className="w-full mt-1 px-3 py-2 rounded-lg bg-[#18221E] border border-[#2C3E36] font-mono text-xs font-bold text-white"
               />
             </div>
           </div>
 
-          {/* Ladder Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
+            <table className="w-full text-left text-xs font-mono tabular-nums">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400">
-                  <th className="py-2">Step</th>
-                  <th className="py-2">Stake</th>
-                  <th className="py-2">Cumulative Risk</th>
-                  <th className="py-2">Payout</th>
-                  <th className="py-2 text-right">Net Profit</th>
+                <tr className="border-b border-[#24322C] text-[#9FB3AA]">
+                  <th className="py-2 pr-2">Step</th>
+                  <th className="py-2 pr-2">Stake</th>
+                  <th className="py-2 pr-2">Cum. Risk</th>
+                  <th className="py-2 pr-2">Payout</th>
+                  <th className="py-2 text-right">Net</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody className="divide-y divide-[#24322C]">
                 {martingaleLadder.map((step) => (
-                  <tr key={step.step} className="hover:bg-slate-800/30">
-                    <td className="py-2 font-bold text-slate-300">Round #{step.step}</td>
-                    <td className="py-2 text-white">${step.stake.toFixed(2)}</td>
-                    <td className="py-2 text-rose-400 font-semibold">
-                      ${step.cumulativeStake.toFixed(2)}
+                  <tr key={step.step} className="hover:bg-[#18221E]">
+                    <td className="py-2 pr-2 font-bold text-white">#{step.step}</td>
+                    <td className="py-2 pr-2 text-[#EBF2EE]">{step.stake.toFixed(2)}</td>
+                    <td className="py-2 pr-2 text-red-400 font-semibold">
+                      {step.cumulativeStake.toFixed(2)}
                     </td>
-                    <td className="py-2 text-emerald-400">${step.payoutOnWin.toFixed(2)}</td>
+                    <td className="py-2 pr-2 text-[#34D399] font-semibold">
+                      {step.payoutOnWin.toFixed(2)}
+                    </td>
                     <td
                       className={`py-2 text-right font-bold ${
-                        step.netProfitOnWin >= 0 ? 'text-cyan-400' : 'text-rose-400'
+                        step.netProfitOnWin >= 0 ? 'text-[#34D399]' : 'text-red-400'
                       }`}
                     >
-                      ${step.netProfitOnWin.toFixed(2)}
+                      {step.netProfitOnWin.toFixed(2)}
                     </td>
                   </tr>
                 ))}
@@ -659,10 +657,10 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
             </table>
           </div>
 
-          <div className="p-2.5 rounded-lg bg-amber-950/30 border border-amber-800/50 text-[11px] text-amber-300 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="p-3 rounded-xl bg-[#F28C28]/12 border border-[#F28C28]/40 text-[11px] text-[#FFB56B] flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-[#F28C28] shrink-0 mt-0.5" />
             <span>
-              <strong>Strict Warning:</strong> Martingale staking exponentially increases risk exposure during losing streaks. Never trade funds you cannot afford to lose.
+              <strong className="text-white">Warning:</strong> Martingale staking exponentially increases risk exposure during losing streaks.
             </span>
           </div>
         </div>

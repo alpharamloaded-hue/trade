@@ -307,7 +307,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-[#0B100E] text-[#F2F6F4] font-sans selection:bg-[#F28C28] selection:text-[#0B100E]">
       {/* Top Bar Header */}
       <Header
         currentSymbol={symbol}
@@ -325,37 +325,39 @@ export default function App() {
       />
 
       {/* Main Workspace Layout (2-Column Desktop Grid) */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 md:p-6">
         {/* Navigation Mode Tabs Bar */}
-        <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-800/80">
-          <div className="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-xl border border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-3 border-b border-[#24322C]">
+          <div className="grid grid-cols-2 sm:inline-flex w-full sm:w-auto items-center gap-1.5 bg-[#121916] p-1.5 rounded-xl border border-[#24322C]">
             <button
               onClick={() => setActiveTab('digits')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'digits'
-                  ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  ? 'bg-[#0F5C45] text-white'
+                  : 'text-[#9FB3AA] hover:text-white hover:bg-[#18221E]'
               }`}
             >
-              <BarChart3 className="w-4 h-4" />
-              <span>Digit Matches & Differs</span>
+              <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">Digit Matches & Differs</span>
             </button>
             <button
               onClick={() => setActiveTab('multipliers')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'multipliers'
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  ? 'bg-[#0F5C45] text-white'
+                  : 'text-[#9FB3AA] hover:text-white hover:bg-[#18221E]'
               }`}
             >
-              <Gauge className="w-4 h-4" />
-              <span>Multiplier Liquidation Engine</span>
+              <Gauge className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="truncate">Multiplier Engine</span>
             </button>
           </div>
 
-          <div className="hidden md:flex items-center gap-3 text-xs text-slate-400 font-mono">
-            <span>Buffer: <strong>{ticks.length} / 1000</strong> ticks</span>
-            <span>·</span>
+          <div className="hidden md:flex items-center gap-3 text-xs text-[#9FB3AA] font-mono tabular-nums">
+            <span>
+              Buffer: <strong className="text-white">{ticks.length} / 1000</strong> ticks
+            </span>
+            <span className="text-[#4B5F57]">·</span>
             <span>Sub-300ms Tick Pipeline</span>
           </div>
         </div>
@@ -371,9 +373,9 @@ export default function App() {
         />
 
         {/* 2-Column Responsive Dashboard Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
           {/* Left Column: Market Stream & Price Focus (5 Cols on LG) */}
-          <div className="lg:col-span-5 space-y-6">
+          <div className="lg:col-span-5 space-y-5 sm:space-y-6">
             <MarketStreamView
               symbol={symbol}
               latestTick={latestTick}
@@ -383,6 +385,7 @@ export default function App() {
             {/* Active Position Tracker */}
             <ActivePositionsTracker
               contracts={activeContracts}
+              currency={userAccount.currency || 'USD'}
               onSellSuccess={handleSellSuccess}
             />
           </div>
