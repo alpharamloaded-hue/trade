@@ -143,15 +143,18 @@ export default function App() {
     setPendingOrder({ proposal, contractType, targetParam });
   };
 
-  // Execute trade after secondary user confirmation
+  // Execute trade after secondary user confirmation (auto-connects OTP/PAT auth socket if needed)
   const handleConfirmOrder = async (proposal: DerivProposal) => {
-    const res = await derivWs.executeBuy(proposal.id, proposal.ask_price);
+    const contractType = pendingOrder?.contractType || 'DIGITMATCH';
+    const targetParam = pendingOrder?.targetParam;
+    const currency = userAccount.currency || 'USD';
 
-    // If simulated or active contract returned, add to open contract tracker
-    if (res && res.buy) {
+    // Virtual demo account execution (works even while streaming live Deriv ticks)
+    if (userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive())) {
+      const mockId = Math.floor(Math.random() * 900000) + 100000;
       const newContract: OpenContract = {
-        contract_id: res.buy.contract_id,
-        contract_type: pendingOrder?.contractType || 'CONTRACT',
+        contract_id: mockId,
+        contract_type: contractType,
         buy_price: proposal.ask_price,
         current_spot: proposal.spot,
         profit: 0,
@@ -161,12 +164,137 @@ export default function App() {
         date_start: Math.floor(Date.now() / 1000),
       };
       setActiveContracts((prev) => [newContract, ...prev]);
-
-      // If simulated, update simulated balance
-      if (res.buy.balance_after) {
+      if (userAccount.balance !== undefined) {
         setUserAccount((prev) => ({
           ...prev,
-          balance: res.buy.balance_after,
+          balance: Number(Math.max(0, (prev.balance || 10000) - proposal.ask_price).toFixed(2)),
+        }));
+      }
+      return;
+    }
+
+    if (!userAccount.isAuthorized) {
+      throw new Error(
+        'No trading account connected. Click "Connect Account" below to sign in with Deriv OAuth 2.0, paste a token, or launch Demo Mode.'
+      );
+    }
+
+    let targetProposal = proposal;
+    let reconnectedAuth = false;
+
+    if (userAccount.authMethod === 'oauth2' || userAccount.authMethod === 'pat-rest') {
+      if (!derivWs.isAuthSocketOpen()) {
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${userAccount.token}`,
+          'Content-Type': 'application/json',
+        };
+        if (userAccount.appId && userAccount.appId !== '1089') {
+          headers['Deriv-App-ID'] = userAccount.appId;
+        }
+
+        let accountId = userAccount.loginid;
+        if (!accountId || accountId.startsWith('OAuth App') || accountId.startsWith('PAT App')) {
+          const accResp = await fetch('/api/deriv/accounts', { headers });
+          if (accResp.status === 401) {
+            throw new Error('Your Deriv session expired (401). Please re-authorize in Connect API.');
+          }
+          const accData = (await accResp.json()) as { accounts?: Array<{ accountId: string; currency?: string; balance?: number }> };
+          const first = accData.accounts?.[0];
+          if (!first?.accountId) {
+            throw new Error('No Deriv Options trading account found on this token.');
+          }
+          accountId = first.accountId;
+          setUserAccount((prev) => ({
+            ...prev,
+            accounts: accData.accounts,
+            loginid: first.accountId,
+            balance: first.balance ?? prev.balance,
+            currency: first.currency || prev.currency,
+          }));
+        }
+
+        const otpResp = await fetch('/api/deriv/otp', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ accountId, appId: userAccount.appId }),
+        });
+
+        if (otpResp.status === 401) {
+          throw new Error('Your Deriv session expired (401). Please re-authorize in Connect API.');
+        }
+
+        const otpData = (await otpResp.json()) as Record<string, unknown>;
+        const otpUrl = String(otpData.url || otpData.ws_url || '');
+        if (!otpResp.ok || !otpUrl.startsWith('wss://')) {
+          throw new Error(
+            String(otpData.message || otpData.error || 'Could not obtain a live OTP WebSocket URL from Deriv.')
+          );
+        }
+
+        await derivWs.connectWithOtpUrlAndWait(otpUrl);
+        setUserAccount((prev) => ({ ...prev, otpWsUrl: otpUrl }));
+        reconnectedAuth = true;
+      }
+    } else if (userAccount.authMethod === 'pat') {
+      if (!derivWs.isAuthSocketOpen()) {
+        await derivWs.authorize(userAccount.token);
+        reconnectedAuth = true;
+      }
+    }
+
+    const fetchBoundProposal = async () => {
+      const isDigit = contractType.startsWith('DIGIT');
+      const fresh = await derivWs.fetchProposal({
+        contractType: contractType as 'DIGITMATCH' | 'DIGITDIFF' | 'MULTUP' | 'MULTDOWN',
+        stake: proposal.ask_price,
+        symbol,
+        currency,
+        duration: isDigit ? 1 : undefined,
+        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+        preferAuthSocket: true,
+      });
+      if (!fresh) {
+        throw new Error('Could not refresh live quote on authenticated Deriv socket. Please retry.');
+      }
+      return fresh;
+    };
+
+    if (reconnectedAuth) {
+      targetProposal = await fetchBoundProposal();
+    }
+
+    let res: any;
+    try {
+      res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
+    } catch (buyErr) {
+      // If proposal was originally quoted on the public WS before authWs opened, refresh on authWs and retry once
+      if (!reconnectedAuth) {
+        targetProposal = await fetchBoundProposal();
+        res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
+      } else {
+        throw buyErr;
+      }
+    }
+
+    if (res && res.buy) {
+      const newContract: OpenContract = {
+        contract_id: res.buy.contract_id,
+        contract_type: contractType,
+        buy_price: Number(res.buy.buy_price ?? targetProposal.ask_price),
+        current_spot: targetProposal.spot,
+        profit: 0,
+        profit_percentage: 0,
+        status: 'open',
+        entry_tick: targetProposal.spot,
+        date_start: Math.floor(Date.now() / 1000),
+      };
+      setActiveContracts((prev) => [newContract, ...prev]);
+
+      if (res.buy.balance_after !== undefined) {
+        setUserAccount((prev) => ({
+          ...prev,
+          balance: Number(res.buy.balance_after),
         }));
       }
     }
@@ -310,6 +438,10 @@ export default function App() {
         targetParam={pendingOrder?.targetParam}
         symbol={symbol}
         userAccount={userAccount}
+        onOpenAuth={() => {
+          setPendingOrder(null);
+          setIsAuthModalOpen(true);
+        }}
         onConfirmOrder={handleConfirmOrder}
       />
 

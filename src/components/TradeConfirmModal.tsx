@@ -11,6 +11,7 @@ interface TradeConfirmModalProps {
   targetParam?: string | number;
   symbol: string;
   userAccount: UserAuthAccount;
+  onOpenAuth?: () => void;
   onConfirmOrder: (proposal: DerivProposal) => Promise<void>;
 }
 
@@ -22,6 +23,7 @@ export const TradeConfirmModal: React.FC<TradeConfirmModalProps> = ({
   targetParam,
   symbol,
   userAccount,
+  onOpenAuth,
   onConfirmOrder,
 }) => {
   const [hasAcknowledged, setHasAcknowledged] = useState(false);
@@ -109,8 +111,19 @@ export const TradeConfirmModal: React.FC<TradeConfirmModalProps> = ({
 
         {/* Auth status notice */}
         {!userAccount.isAuthorized && (
-          <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-800/60 text-xs text-amber-300 mb-4">
-            Notice: You are in Demo Mode. Order will be simulated in the open contracts tracker without charging live funds.
+          <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-800/60 text-xs text-amber-300 mb-4 flex items-center justify-between gap-2">
+            <span>
+              No account connected. Connect your Deriv account or launch Virtual Demo Mode to execute orders.
+            </span>
+            {onOpenAuth && (
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                className="px-2.5 py-1 rounded-md bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-[11px] shrink-0 cursor-pointer"
+              >
+                Connect API
+              </button>
+            )}
           </div>
         )}
 

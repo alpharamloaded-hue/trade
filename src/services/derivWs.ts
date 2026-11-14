@@ -140,7 +140,15 @@ class DerivWebSocketService {
     }
   }
 
+  public isAuthSocketOpen(): boolean {
+    return Boolean(this.authWs && this.authWs.readyState === WebSocket.OPEN);
+  }
+
   public connectWithOtpUrl(otpWsUrl: string): void {
+    this.connectWithOtpUrlAndWait(otpWsUrl).catch(() => {});
+  }
+
+  public connectWithOtpUrlAndWait(otpWsUrl: string, timeoutMs: number = 7000): Promise<void> {
     this.customWsUrl = otpWsUrl;
     this.isSimulated = false;
     this.stopSimulation();
@@ -153,40 +161,65 @@ class DerivWebSocketService {
     this.closeSocket(this.authWs);
     this.authWs = null;
 
-    try {
-      const sock = new WebSocket(otpWsUrl);
-      this.authWs = sock;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error('Timed out connecting to Deriv OTP trading WebSocket.'));
+      }, timeoutMs);
 
-      sock.onopen = () => {
-        if (this.authWs !== sock) return;
-        this.notifyStatus('connected', this.pingMs);
-      };
+      try {
+        const sock = new WebSocket(otpWsUrl);
+        this.authWs = sock;
 
-      sock.onmessage = (event) => {
-        if (this.authWs !== sock) return;
-        try {
-          const data = JSON.parse(event.data);
-          this.handleMessage(data);
-        } catch (e) {
-          console.error('Failed to parse Deriv OTP WS message:', e);
-        }
-      };
+        sock.onopen = () => {
+          if (this.authWs !== sock) return;
+          this.notifyStatus('connected', this.pingMs);
+          if (!settled) {
+            settled = true;
+            window.clearTimeout(timer);
+            resolve();
+          }
+        };
 
-      sock.onerror = (err) => {
-        if (this.authWs !== sock) return;
-        console.warn('Deriv OTP WebSocket error:', err);
-      };
+        sock.onmessage = (event) => {
+          if (this.authWs !== sock) return;
+          try {
+            const data = JSON.parse(event.data);
+            this.handleMessage(data);
+          } catch (e) {
+            console.error('Failed to parse Deriv OTP WS message:', e);
+          }
+        };
 
-      sock.onclose = () => {
-        if (this.authWs !== sock) return;
-        this.authWs = null;
-        // OTP URLs are single-use (120s TTL), so clear after close to avoid reconnecting with a spent URL
+        sock.onerror = (err) => {
+          if (this.authWs !== sock) return;
+          console.warn('Deriv OTP WebSocket error:', err);
+          if (!settled) {
+            settled = true;
+            window.clearTimeout(timer);
+            reject(new Error('Deriv OTP WebSocket connection failed. Try refreshing your session in Connect API.'));
+          }
+        };
+
+        sock.onclose = () => {
+          if (this.authWs !== sock) return;
+          this.authWs = null;
+          // OTP URLs are single-use (120s TTL), so clear after close to avoid reconnecting with a spent URL
+          this.customWsUrl = null;
+          if (!settled) {
+            settled = true;
+            window.clearTimeout(timer);
+            reject(new Error('Deriv OTP WebSocket closed before opening.'));
+          }
+        };
+      } catch (err) {
+        window.clearTimeout(timer);
         this.customWsUrl = null;
-      };
-    } catch (err) {
-      console.warn('Failed to open Deriv OTP WebSocket:', err);
-      this.customWsUrl = null;
-    }
+        reject(err instanceof Error ? err : new Error('Failed to open Deriv OTP WebSocket.'));
+      }
+    });
   }
 
   public clearCustomWsUrl(): void {
@@ -480,6 +513,7 @@ class DerivWebSocketService {
     duration?: number;
     barrier?: string;
     multiplier?: number;
+    preferAuthSocket?: boolean;
   }): Promise<DerivProposal | null> {
     const currency = params.currency || 'USD';
     if (this.isSimulated) {
@@ -506,8 +540,10 @@ class DerivWebSocketService {
     }
 
     try {
-      let sock = this.getActiveTradingOrPublicSocket();
-      if (!sock) {
+      let sock = params.preferAuthSocket
+        ? (this.authWs && this.authWs.readyState === WebSocket.OPEN ? this.authWs : null)
+        : this.getActiveTradingOrPublicSocket();
+      if (!sock && !params.preferAuthSocket) {
         await this.ensureConnected(4000).catch(() => {});
         sock = this.getActiveTradingOrPublicSocket();
       }
@@ -580,14 +616,24 @@ class DerivWebSocketService {
 
     if (!this.authWs || this.authWs.readyState !== WebSocket.OPEN) {
       throw new Error(
-        'Authenticated trading WebSocket is not active. Open the Account modal and click "Connect OTP" (or authorize your token) to execute live trades.'
+        'Authenticated trading WebSocket is not active. Open Connect API and authorize your account or launch Demo Mode.'
       );
     }
 
-    return this.sendRequestOnSocket(this.authWs, {
+    const buyRes: any = await this.sendRequestOnSocket(this.authWs, {
       buy: proposalId,
       price,
     });
+
+    if (buyRes?.buy?.contract_id) {
+      this.sendRaw(this.authWs, {
+        proposal_open_contract: 1,
+        contract_id: buyRes.buy.contract_id,
+        subscribe: 1,
+      }).catch(() => {});
+    }
+
+    return buyRes;
   }
 
   public async sellContract(contractId: number): Promise<any> {
