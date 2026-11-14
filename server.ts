@@ -111,6 +111,46 @@ async function fetchDerivAccounts(accessToken: string): Promise<DerivRestAccount
   }
 }
 
+function extractOtpWsUrl(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const obj = payload as Record<string, unknown>;
+  const nested =
+    obj.data && typeof obj.data === 'object' ? (obj.data as Record<string, unknown>) : undefined;
+  const candidates = [
+    nested?.url,
+    nested?.websocket_url,
+    nested?.ws_url,
+    obj.url,
+    obj.websocket_url,
+    obj.ws_url,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.startsWith('wss://')) {
+      return c;
+    }
+  }
+  return undefined;
+}
+
+function extractRestErrorMessage(payload: unknown, status?: number): string {
+  if (!payload || typeof payload !== 'object') {
+    return status ? `Deriv REST returned HTTP ${status}` : 'Deriv REST request failed';
+  }
+  const obj = payload as Record<string, unknown>;
+  if (typeof obj.message === 'string' && obj.message.trim()) return obj.message;
+  if (typeof obj.error === 'string' && obj.error.trim()) return obj.error;
+  if (obj.error && typeof obj.error === 'object') {
+    const errObj = obj.error as Record<string, unknown>;
+    if (typeof errObj.message === 'string' && errObj.message.trim()) return errObj.message;
+  }
+  if (Array.isArray(obj.errors) && obj.errors.length > 0) {
+    const first = obj.errors[0] as Record<string, unknown>;
+    if (typeof first?.message === 'string' && first.message.trim()) return first.message;
+  }
+  if (typeof obj.raw === 'string' && obj.raw.trim()) return obj.raw.slice(0, 200);
+  return status ? `Deriv REST returned HTTP ${status}` : 'Deriv REST request failed';
+}
+
 function renderCallbackHtml(payload: {
   ok: boolean;
   state?: string;
@@ -458,9 +498,8 @@ async function startServer() {
       }
 
       if (!accResp.ok) {
-        const errObj = accParsed as Record<string, unknown>;
         res.status(accResp.status).json({
-          error: String(errObj.message || errObj.error || `Deriv REST returned HTTP ${accResp.status}`),
+          error: extractRestErrorMessage(accParsed, accResp.status),
           details: accParsed,
         });
         return;
@@ -482,11 +521,8 @@ async function startServer() {
             }
           );
           if (otpResp.ok) {
-            const otpData = (await otpResp.json()) as Record<string, unknown>;
-            const candidate = String(otpData.url || otpData.ws_url || '');
-            if (candidate.startsWith('wss://')) {
-              otpWsUrl = candidate;
-            }
+            const otpData = await otpResp.json();
+            otpWsUrl = extractOtpWsUrl(otpData);
           }
         } catch {
           // Non-fatal; user can still click Connect OTP later
@@ -533,7 +569,10 @@ async function startServer() {
       }
 
       if (!resp.ok) {
-        res.status(resp.status).json(parsed);
+        res.status(resp.status).json({
+          error: extractRestErrorMessage(parsed, resp.status),
+          details: parsed,
+        });
         return;
       }
 
@@ -590,11 +629,26 @@ async function startServer() {
       }
 
       if (!resp.ok) {
-        res.status(resp.status).json(parsed);
+        res.status(resp.status).json({
+          error: extractRestErrorMessage(parsed, resp.status),
+          details: parsed,
+        });
         return;
       }
 
-      res.json(parsed);
+      const otpUrl = extractOtpWsUrl(parsed);
+      if (!otpUrl) {
+        res.status(502).json({
+          error: 'Deriv OTP response did not include a WebSocket URL.',
+          details: parsed,
+        });
+        return;
+      }
+
+      res.json({
+        ...(typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {}),
+        url: otpUrl,
+      });
     } catch (err) {
       res.status(502).json({
         error: err instanceof Error ? err.message : 'Failed to request OTP WebSocket URL',

@@ -133,7 +133,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((data: Record<string, unknown> | null) => {
-          const otpUrl = data ? String(data.url || data.ws_url || '') : '';
+          const nested =
+            data?.data && typeof data.data === 'object'
+              ? (data.data as Record<string, unknown>)
+              : undefined;
+          const otpUrl = String(
+            data?.url || nested?.url || data?.websocket_url || data?.ws_url || ''
+          );
           if (otpUrl.startsWith('wss://')) {
             derivWs.connectWithOtpUrl(otpUrl);
             onUpdateAccount({ otpWsUrl: otpUrl });
@@ -377,19 +383,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         throw new Error(String(data.message || data.error || 'Failed to generate OTP WebSocket URL.'));
       }
 
-      const otpUrl = String(data.url || data.ws_url || '');
-      if (otpUrl.startsWith('wss://')) {
-        derivWs.connectWithOtpUrl(otpUrl);
+      const nested =
+        data.data && typeof data.data === 'object'
+          ? (data.data as Record<string, unknown>)
+          : undefined;
+      const otpUrl = String(data.url || nested?.url || data.websocket_url || data.ws_url || '');
+      if (!otpUrl.startsWith('wss://')) {
+        throw new Error('Deriv OTP response did not include a valid WebSocket URL.');
       }
+
+      await derivWs.connectWithOtpUrlAndWait(otpUrl);
 
       onUpdateAccount({
         loginid: account.accountId,
         balance: account.balance,
         currency: account.currency || 'USD',
-        otpWsUrl: otpUrl || undefined,
+        otpWsUrl: otpUrl,
       });
 
-      setSuccessMsg(`Switched active account to ${account.accountId}${otpUrl ? ' via OTP WebSocket' : ''}.`);
+      setSuccessMsg(`Switched active account to ${account.accountId} via OTP WebSocket.`);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to obtain OTP WebSocket URL.');
     } finally {

@@ -224,11 +224,23 @@ export default function App() {
         }
 
         const otpData = (await otpResp.json()) as Record<string, unknown>;
-        const otpUrl = String(otpData.url || otpData.ws_url || '');
+        const nestedOtpData =
+          otpData.data && typeof otpData.data === 'object'
+            ? (otpData.data as Record<string, unknown>)
+            : undefined;
+        const otpUrl = String(
+          otpData.url || nestedOtpData?.url || otpData.websocket_url || otpData.ws_url || ''
+        );
         if (!otpResp.ok || !otpUrl.startsWith('wss://')) {
-          throw new Error(
-            String(otpData.message || otpData.error || 'Could not obtain a live OTP WebSocket URL from Deriv.')
-          );
+          const errMsg =
+            typeof otpData.message === 'string'
+              ? otpData.message
+              : typeof otpData.error === 'string'
+                ? otpData.error
+                : otpData.error && typeof otpData.error === 'object'
+                  ? String((otpData.error as Record<string, unknown>).message || '')
+                  : '';
+          throw new Error(errMsg || 'Could not obtain a live OTP WebSocket URL from Deriv.');
         }
 
         await derivWs.connectWithOtpUrlAndWait(otpUrl);
