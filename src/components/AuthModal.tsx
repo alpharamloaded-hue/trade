@@ -5,6 +5,8 @@ import {
   Clock,
   Copy,
   ExternalLink,
+  Eye,
+  EyeOff,
   HelpCircle,
   KeyRound,
   Lock,
@@ -42,13 +44,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const [authTab, setAuthTab] = useState<'oauth2' | 'pat'>('oauth2');
   const [tokenInput, setTokenInput] = useState(userAccount.token || '');
+  const [showToken, setShowToken] = useState(false);
   const [appIdInput, setAppIdInput] = useState(() => {
     try {
-      return localStorage.getItem('digitscope_oauth_client_id') || userAccount.appId || '1089';
+      const saved = localStorage.getItem('digitscope_oauth_client_id');
+      if (saved && saved !== '1089') return saved;
+      if (userAccount.appId && userAccount.appId !== '1089') return userAccount.appId;
+      return '';
     } catch {
-      return userAccount.appId || '1089';
+      return userAccount.appId && userAccount.appId !== '1089' ? userAccount.appId : '';
     }
   });
+  const [hasServerAppId, setHasServerAppId] = useState(false);
   const [selectedScopes, setSelectedScopes] = useState<string[]>(['trade', 'account_manage']);
   const [isLoading, setIsLoading] = useState(false);
   const [oauthWaiting, setOauthWaiting] = useState(false);
@@ -76,6 +83,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const applyOAuthResult = (payload: OAuthSessionResult) => {
     stopOAuthWait();
     const firstAccount = payload.accounts && payload.accounts.length > 0 ? payload.accounts[0] : undefined;
+
+    // Ensure live Deriv tick stream replaces simulated demo ticks immediately
+    if (derivWs.isSimulationActive()) {
+      derivWs.toggleSimulation(false);
+    } else {
+      derivWs.connect();
+    }
 
     try {
       localStorage.setItem('digitscope_oauth_client_id', payload.client_id);
@@ -105,7 +119,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       isTradeEnabled: payload.scope.includes('trade'),
     });
 
-    setSuccessMsg('Authorized via Deriv OAuth 2.0 (PKCE).');
+    setSuccessMsg('Authorized via Deriv OAuth 2.0 (PKCE). Live stream active.');
+
+    // Auto-obtain OTP WebSocket URL for the primary account so live trading works immediately
+    if (firstAccount?.accountId) {
+      fetch('/api/deriv/otp', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${payload.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ accountId: firstAccount.accountId, appId: payload.client_id }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: Record<string, unknown> | null) => {
+          const otpUrl = data ? String(data.url || data.ws_url || '') : '';
+          if (otpUrl.startsWith('wss://')) {
+            derivWs.connectWithOtpUrl(otpUrl);
+            onUpdateAccount({ otpWsUrl: otpUrl });
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   // Listen for postMessage & BroadcastChannel from the OAuth popup callback
@@ -153,6 +188,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     };
   }, [isOpen]);
 
+  // Fetch server-side DERIV_APP_ID status when modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/oauth/config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg: { hasServerAppId?: boolean; serverAppId?: string } | null) => {
+        if (!cfg) return;
+        setHasServerAppId(Boolean(cfg.hasServerAppId));
+        if (cfg.serverAppId) {
+          setAppIdInput((prev) => (prev && prev !== '1089' ? prev : cfg.serverAppId || ''));
+        }
+      })
+      .catch(() => {});
+  }, [isOpen]);
+
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) {
@@ -178,8 +228,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Start Deriv OAuth2 Authorization Code + PKCE Flow in Popup
   const handleStartOAuth2 = async (prompt?: 'registration') => {
     const cleanAppId = appIdInput.trim();
-    if (!cleanAppId) {
-      setErrorMsg('Please enter your registered Deriv App ID (client_id).');
+    if (!cleanAppId && !hasServerAppId) {
+      setErrorMsg(
+        'Enter your Registered App ID (client_id) from developers.deriv.com/dashboard, or set DERIV_APP_ID in Render Environment.'
+      );
+      return;
+    }
+    if (cleanAppId === '1089') {
+      setErrorMsg(
+        'App ID "1089" is Deriv\'s public sample WebSocket ID and does not exist in OAuth 2.0 (which causes Deriv\'s 404 error page). Enter your own registered App ID from developers.deriv.com/dashboard.'
+      );
       return;
     }
     if (selectedScopes.length === 0) {
@@ -251,17 +309,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Fetch / refresh REST accounts using OAuth2 Bearer token
+  // Fetch / refresh REST accounts using OAuth2 or PAT Bearer token
   const handleRefreshAccounts = async () => {
     if (!userAccount.token) return;
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const resp = await fetch('/api/deriv/accounts', {
-        headers: { Authorization: `Bearer ${userAccount.token}` },
-      });
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${userAccount.token}`,
+      };
+      if (userAccount.appId && userAccount.appId !== '1089') {
+        headers['Deriv-App-ID'] = userAccount.appId;
+      }
+      const resp = await fetch('/api/deriv/accounts', { headers });
       if (resp.status === 401) {
-        setErrorMsg('Access token expired (401). Please re-authorize via Deriv OAuth 2.0.');
+        setErrorMsg('Access token expired or rejected (401). Please re-authorize.');
         setIsLoading(false);
         return;
       }
@@ -293,17 +355,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMsg(null);
 
     try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${userAccount.token}`,
+        'Content-Type': 'application/json',
+      };
+      if (userAccount.appId && userAccount.appId !== '1089') {
+        headers['Deriv-App-ID'] = userAccount.appId;
+      }
       const resp = await fetch('/api/deriv/otp', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${userAccount.token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ accountId: account.accountId }),
+        headers,
+        body: JSON.stringify({ accountId: account.accountId, appId: userAccount.appId }),
       });
 
       if (resp.status === 401) {
-        throw new Error('Access token expired (401). Please re-authorize via Deriv OAuth 2.0.');
+        throw new Error('Token expired or unauthorized (401). Please re-authorize.');
       }
 
       const data = (await resp.json()) as Record<string, unknown>;
@@ -355,9 +421,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }, 600);
   };
 
-  // Legacy PAT / WebSocket authorize
+  // Authorize PAT (supports both new developers.deriv.com REST PATs and legacy app.deriv.com WS tokens)
   const handlePatAuthorize = async () => {
     const cleanToken = tokenInput.trim();
+    const cleanAppId = appIdInput.trim();
     if (!cleanToken) {
       setErrorMsg('Please enter a valid Deriv API token or use OAuth 2.0.');
       return;
@@ -373,8 +440,70 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMsg(null);
 
     try {
+      // 1. If a registered App ID (not 1089) is provided or configured on server, test new REST PAT flow first
+      let restPatError: string | null = null;
+      if ((cleanAppId && cleanAppId !== '1089') || hasServerAppId) {
+        try {
+          const restResp = await fetch('/api/deriv/pat/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token: cleanToken,
+              appId: cleanAppId && cleanAppId !== '1089' ? cleanAppId : undefined,
+            }),
+          });
+          const restData = (await restResp.json()) as {
+            ok?: boolean;
+            accounts?: DerivRestAccount[];
+            otpWsUrl?: string;
+            error?: string;
+          };
+
+          if (restResp.ok && restData.ok) {
+            const list = restData.accounts || [];
+            const first = list[0];
+            if (cleanAppId && cleanAppId !== '1089') {
+              try {
+                localStorage.setItem('digitscope_oauth_client_id', cleanAppId);
+              } catch {}
+            }
+            if (restData.otpWsUrl) {
+              derivWs.connectWithOtpUrl(restData.otpWsUrl);
+            } else if (derivWs.isSimulationActive()) {
+              derivWs.toggleSimulation(false);
+            } else {
+              derivWs.connect();
+            }
+            onUpdateAccount({
+              isAuthorized: true,
+              authMethod: 'pat-rest',
+              token: cleanToken,
+              appId: cleanAppId || userAccount.appId,
+              accounts: list,
+              loginid: first?.accountId || `PAT App #${cleanAppId || 'Server'}`,
+              balance: first?.balance,
+              currency: first?.currency || 'USD',
+              otpWsUrl: restData.otpWsUrl,
+              isTradeEnabled: true,
+            });
+            setSuccessMsg(
+              `Connected via Deriv REST PAT${first ? ` (${first.accountId})` : ''}${
+                restData.otpWsUrl ? ' + OTP WebSocket' : ''
+              }.`
+            );
+            setIsLoading(false);
+            return;
+          }
+          restPatError = restData.error || null;
+        } catch {
+          // Fall through to legacy WebSocket authorize check
+        }
+      }
+
+      // 2. Fallback: Legacy WebSocket v3 { authorize } (for tokens created at app.deriv.com/account/api-token)
+      const wsAppId = cleanAppId || '1089';
       derivWs.clearCustomWsUrl();
-      derivWs.setConfig(appIdInput, cleanToken);
+      derivWs.setConfig(wsAppId, cleanToken);
       const res = await derivWs.authorize(cleanToken);
 
       if (res && res.authorize) {
@@ -383,7 +512,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           isAuthorized: true,
           authMethod: 'pat',
           token: cleanToken,
-          appId: appIdInput,
+          appId: wsAppId,
           loginid: authData.loginid,
           balance: Number(authData.balance),
           currency: authData.currency,
@@ -395,10 +524,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           onClose();
         }, 1000);
       } else {
-        setErrorMsg('Authorization failed. Please verify your token.');
+        setErrorMsg(restPatError || 'Authorization failed. Please verify your token.');
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to authenticate with Deriv API.');
+      const wsErr = err instanceof Error ? err.message : 'Failed to authenticate with Deriv API.';
+      if (!cleanAppId || cleanAppId === '1089') {
+        setErrorMsg(
+          `${wsErr} — Note: If you created a Personal Access Token (PAT) on developers.deriv.com, you MUST also enter your Registered App ID (not 1089) above. Legacy WebSocket tokens must be generated at app.deriv.com/account/api-token.`
+        );
+      } else {
+        setErrorMsg(
+          `${wsErr} — Verify whether this is a developers.deriv.com PAT (matching App ID ${cleanAppId} with trade/account_manage scopes) or a legacy app.deriv.com API token.`
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -491,6 +629,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       ? isTokenExpired
                         ? 'OAuth 2.0 Session Expired'
                         : 'Authorized via Deriv OAuth 2.0 (PKCE)'
+                      : userAccount.authMethod === 'pat-rest'
+                      ? 'Authorized via Deriv REST PAT'
                       : userAccount.authMethod === 'demo'
                       ? 'Virtual Demo Session'
                       : 'Authorized via API Token'}
@@ -521,7 +661,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               )}
 
-              {userAccount.authMethod === 'oauth2' && (
+              {(userAccount.authMethod === 'oauth2' || userAccount.authMethod === 'pat-rest') && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     type="button"
@@ -532,7 +672,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                     <span>Refresh Accounts</span>
                   </button>
-                  {isTokenExpired && (
+                  {userAccount.authMethod === 'oauth2' && isTokenExpired && (
                     <button
                       type="button"
                       onClick={() => handleStartOAuth2()}
@@ -546,8 +686,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </div>
 
-            {/* Accounts selector when OAuth2 returns multiple accounts */}
-            {userAccount.authMethod === 'oauth2' &&
+            {/* Accounts selector when OAuth2 or REST PAT returns accounts */}
+            {(userAccount.authMethod === 'oauth2' || userAccount.authMethod === 'pat-rest') &&
               userAccount.accounts &&
               userAccount.accounts.length > 0 && (
                 <div className="space-y-2">
@@ -686,11 +826,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                   <input
                     type="text"
-                    placeholder="Enter your Deriv App ID (e.g. 65432)"
+                    placeholder={
+                      hasServerAppId
+                        ? 'Configured on server (or enter App ID to override)'
+                        : 'Paste your App ID from developers.deriv.com/dashboard'
+                    }
                     value={appIdInput}
                     onChange={(e) => setAppIdInput(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
                   />
+                  {!hasServerAppId && !appIdInput.trim() && (
+                    <p className="mt-1 text-[11px] text-amber-300/90">
+                      Required: paste the App ID from your OAuth 2.0 app on developers.deriv.com (sample ID 1089 causes a 404).
+                    </p>
+                  )}
                 </div>
 
                 {/* Exact Redirect URI Display & Copy */}
@@ -790,61 +939,73 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 )}
               </div>
             ) : (
-              /* Legacy PAT Form */
+              /* PAT Form (supports both developers.deriv.com REST PAT & legacy app.deriv.com WS token) */
               <div className="space-y-3.5">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-slate-300">
-                      Deriv API Token (PAT)
+                      Deriv API Token / PAT
                     </label>
-                    <a
-                      href="https://app.deriv.com/account/api-token"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 font-mono"
-                    >
-                      <span>Get token on Deriv</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+                    <div className="flex items-center gap-2 text-[11px] font-mono">
+                      <a
+                        href="https://developers.deriv.com/dashboard"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-cyan-400 hover:underline flex items-center gap-0.5"
+                      >
+                        <span>New PAT</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <span className="text-slate-600">·</span>
+                      <a
+                        href="https://app.deriv.com/account/api-token"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-slate-400 hover:text-cyan-400 hover:underline flex items-center gap-0.5"
+                      >
+                        <span>Legacy WS</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-slate-500">
                       <Lock className="w-4 h-4" />
                     </span>
                     <input
-                      type="password"
-                      placeholder="Paste your authorized token (Read & Trade scopes)"
+                      type={showToken ? 'text' : 'password'}
+                      placeholder="Paste your PAT (developers.deriv.com) or legacy WS token"
                       value={tokenInput}
                       onChange={(e) => setTokenInput(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
+                      className="w-full pl-9 pr-9 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken((prev) => !prev)}
+                      className="absolute right-2.5 top-2 p-0.5 text-slate-400 hover:text-white cursor-pointer"
+                      aria-label={showToken ? 'Hide token' : 'Show token'}
+                    >
+                      {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-300">Deriv App ID</label>
-                    <div className="flex items-center gap-1 text-[10px] font-mono text-slate-400">
-                      <span>Presets:</span>
-                      {['1089', '36300', '16929'].map((id) => (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => setAppIdInput(id)}
-                          className={`px-1.5 py-0.5 rounded cursor-pointer ${
-                            appIdInput === id
-                              ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
-                          }`}
-                        >
-                          {id}
-                        </button>
-                      ))}
-                    </div>
+                    <label className="text-xs font-semibold text-slate-300">
+                      Registered Deriv App ID
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      Required for developers.deriv.com PATs
+                    </span>
                   </div>
                   <input
                     type="text"
-                    placeholder="1089"
+                    placeholder={
+                      hasServerAppId
+                        ? 'Configured on server (or enter App ID to override)'
+                        : 'Enter your registered App ID from developers.deriv.com'
+                    }
                     value={appIdInput}
                     onChange={(e) => setAppIdInput(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 font-mono"
@@ -856,7 +1017,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   onClick={handlePatAuthorize}
                   className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 shadow-md transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  {isLoading ? 'Connecting to Deriv Gateway...' : 'Authorize API Token'}
+                  {isLoading ? 'Verifying Token with Deriv...' : 'Authorize API Token'}
                 </button>
               </div>
             )}

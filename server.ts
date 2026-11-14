@@ -206,6 +206,14 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
+  app.get('/api/oauth/config', (_req: Request, res: Response) => {
+    const serverAppId = (process.env.DERIV_APP_ID || '').trim();
+    res.json({
+      hasServerAppId: Boolean(serverAppId && serverAppId !== '1089'),
+      serverAppId: serverAppId && serverAppId !== '1089' ? serverAppId : '',
+    });
+  });
+
   // 1. Construct Deriv OAuth2 + PKCE Authorization URL
   app.post('/api/oauth/url', (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
@@ -217,6 +225,14 @@ async function startServer() {
 
     if (!clientId) {
       res.status(400).json({ error: 'Missing Deriv App ID (client_id).' });
+      return;
+    }
+
+    if (clientId === '1089') {
+      res.status(400).json({
+        error:
+          'App ID "1089" is Deriv\'s legacy public sample ID and is not registered for OAuth 2.0. Enter your own OAuth 2.0 App ID from developers.deriv.com/dashboard (or set DERIV_APP_ID in Render Environment).',
+      });
       return;
     }
 
@@ -403,7 +419,89 @@ async function startServer() {
     res.json({ status: 'completed', payload });
   });
 
-  // 4. Proxy Options Accounts lookup using Bearer token
+  // 4. Verify a new Deriv Personal Access Token (PAT) via REST + fetch OTP WS URL
+  app.post('/api/deriv/pat/verify', async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const token = String(body.token || '').trim();
+    const appId = String(body.appId || process.env.DERIV_APP_ID || '').trim();
+
+    if (!token) {
+      res.status(400).json({ error: 'Missing Personal Access Token.' });
+      return;
+    }
+    if (!appId || appId === '1089') {
+      res.status(400).json({
+        error:
+          'A registered Deriv App ID (from developers.deriv.com/dashboard, not 1089) is required to authenticate a REST Personal Access Token.',
+      });
+      return;
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        'Deriv-App-ID': appId,
+        Accept: 'application/json',
+      };
+
+      const accResp = await fetch(`${DERIV_API_BASE}/trading/v1/options/accounts`, {
+        method: 'GET',
+        headers,
+      });
+
+      const accText = await accResp.text();
+      let accParsed: unknown = {};
+      try {
+        accParsed = accText ? JSON.parse(accText) : {};
+      } catch {
+        accParsed = { raw: accText };
+      }
+
+      if (!accResp.ok) {
+        const errObj = accParsed as Record<string, unknown>;
+        res.status(accResp.status).json({
+          error: String(errObj.message || errObj.error || `Deriv REST returned HTTP ${accResp.status}`),
+          details: accParsed,
+        });
+        return;
+      }
+
+      const accounts = normalizeAccounts(accParsed);
+      let otpWsUrl: string | undefined;
+
+      if (accounts.length > 0) {
+        try {
+          const otpResp = await fetch(
+            `${DERIV_API_BASE}/trading/v1/options/accounts/${encodeURIComponent(accounts[0].accountId)}/otp`,
+            {
+              method: 'POST',
+              headers: {
+                ...headers,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          if (otpResp.ok) {
+            const otpData = (await otpResp.json()) as Record<string, unknown>;
+            const candidate = String(otpData.url || otpData.ws_url || '');
+            if (candidate.startsWith('wss://')) {
+              otpWsUrl = candidate;
+            }
+          }
+        } catch {
+          // Non-fatal; user can still click Connect OTP later
+        }
+      }
+
+      res.json({ ok: true, accounts, otpWsUrl });
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Failed to reach Deriv REST API',
+      });
+    }
+  });
+
+  // 5. Proxy Options Accounts lookup using Bearer token (+ optional Deriv-App-ID for PATs)
   app.get('/api/deriv/accounts', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -411,13 +509,19 @@ async function startServer() {
       return;
     }
 
+    const derivAppId = String(req.headers['deriv-app-id'] || process.env.DERIV_APP_ID || '').trim();
+    const headers: Record<string, string> = {
+      Authorization: authHeader,
+      Accept: 'application/json',
+    };
+    if (derivAppId && derivAppId !== '1089') {
+      headers['Deriv-App-ID'] = derivAppId;
+    }
+
     try {
       const resp = await fetch(`${DERIV_API_BASE}/trading/v1/options/accounts`, {
         method: 'GET',
-        headers: {
-          Authorization: authHeader,
-          Accept: 'application/json',
-        },
+        headers,
       });
 
       const text = await resp.text();
@@ -441,7 +545,7 @@ async function startServer() {
     }
   });
 
-  // 5. Proxy OTP WebSocket URL generation for an account
+  // 6. Proxy OTP WebSocket URL generation for an account
   app.post('/api/deriv/otp', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -456,16 +560,24 @@ async function startServer() {
       return;
     }
 
+    const derivAppId = String(
+      req.headers['deriv-app-id'] || body.appId || process.env.DERIV_APP_ID || ''
+    ).trim();
+    const headers: Record<string, string> = {
+      Authorization: authHeader,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (derivAppId && derivAppId !== '1089') {
+      headers['Deriv-App-ID'] = derivAppId;
+    }
+
     try {
       const resp = await fetch(
         `${DERIV_API_BASE}/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`,
         {
           method: 'POST',
-          headers: {
-            Authorization: authHeader,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
+          headers,
         }
       );
 

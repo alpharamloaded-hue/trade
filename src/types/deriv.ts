@@ -106,7 +106,7 @@ export interface OAuthSessionResult {
 
 export interface UserAuthAccount {
   isAuthorized: boolean;
-  authMethod?: 'oauth2' | 'pat' | 'demo';
+  authMethod?: 'oauth2' | 'pat-rest' | 'pat' | 'demo';
   token: string;
   appId: string;
   loginid?: string;

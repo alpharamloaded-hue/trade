@@ -24,6 +24,8 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
 
   // Track fired pattern IDs to avoid audio spam
   const firedPatternsRef = useRef<Set<string>>(new Set());
+  const windowSizeRef = useRef<RollingWindowSize>(windowSize);
+  windowSizeRef.current = windowSize;
 
   // Popups toggleable by user (persisted in localStorage)
   const [popupsEnabled, setPopupsEnabled] = useState<boolean>(() => {
@@ -33,6 +35,8 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
       return false;
     }
   });
+  const popupsEnabledRef = useRef<boolean>(popupsEnabled);
+  popupsEnabledRef.current = popupsEnabled;
 
   const alertTimerRef = useRef<number | null>(null);
 
@@ -59,7 +63,7 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
     setConnection((prev) => ({ ...prev, symbol: newSymbol }));
   }, []);
 
-  // Set up WebSocket lifecycle
+  // Set up WebSocket lifecycle once on mount
   useEffect(() => {
     derivWs.connect();
 
@@ -77,7 +81,7 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
       setTicks(buffer);
       if (buffer.length > 0) {
         setLatestTick(buffer[buffer.length - 1]);
-        const stats = computeDigitStats(buffer, windowSize);
+        const stats = computeDigitStats(buffer, windowSizeRef.current);
         setDigitStats(stats);
         const scanned = scanPatterns(buffer);
         setPatterns(scanned);
@@ -94,7 +98,7 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
         }
 
         // Compute updated stats
-        const stats = computeDigitStats(next, windowSize);
+        const stats = computeDigitStats(next, windowSizeRef.current);
         setDigitStats(stats);
 
         // Scan patterns
@@ -116,7 +120,7 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
             });
 
             // Only show popups if enabled by the user and for high-significance patterns (X2X or severe drought)
-            if (popupsEnabled) {
+            if (popupsEnabledRef.current) {
               const highPriority = fresh.filter(
                 (p) => p.type === 'X2X' || (p.type === 'DROUGHT' && (p.streakCount || 0) >= 20)
               );
@@ -150,7 +154,7 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
         window.clearTimeout(alertTimerRef.current);
       }
     };
-  }, [windowSize, popupsEnabled]);
+  }, []);
 
   // Recompute stats if window size changes
   const handleWindowChange = useCallback(
@@ -168,7 +172,13 @@ export function useDerivTicks(initialSymbol: string = '1HZ100V') {
   }, []);
 
   const toggleSimulation = useCallback(() => {
-    derivWs.toggleSimulation();
+    const nextSim = !derivWs.isSimulationActive();
+    if (!nextSim) {
+      setTicks([]);
+      setLatestTick(null);
+      setActiveAlerts([]);
+    }
+    derivWs.toggleSimulation(nextSim);
     setConnection((prev) => ({
       ...prev,
       isSimulation: derivWs.isSimulationActive(),
