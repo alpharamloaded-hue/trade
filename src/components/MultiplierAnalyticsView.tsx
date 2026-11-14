@@ -8,6 +8,7 @@ import { getSymbolMeta } from '../utils/symbols';
 interface MultiplierAnalyticsViewProps {
   latestTick: TickData | null;
   symbol: string;
+  currency?: string;
   onInitiateOrder: (proposal: DerivProposal, contractType: string, multiplier: number) => void;
   prefillConfig?: {
     direction: 'MULTUP' | 'MULTDOWN';
@@ -22,6 +23,7 @@ const MULTIPLIER_PRESETS = [10, 20, 50, 100, 200, 500, 1000, 2000];
 export const MultiplierAnalyticsView: React.FC<MultiplierAnalyticsViewProps> = ({
   latestTick,
   symbol,
+  currency = 'USD',
   onInitiateOrder,
   prefillConfig,
 }) => {
@@ -85,6 +87,7 @@ export const MultiplierAnalyticsView: React.FC<MultiplierAnalyticsViewProps> = (
         contractType: direction,
         stake,
         symbol,
+        currency,
         multiplier,
       })
       .then((prop) => {
@@ -103,7 +106,7 @@ export const MultiplierAnalyticsView: React.FC<MultiplierAnalyticsViewProps> = (
     return () => {
       isCancelled = true;
     };
-  }, [stake, multiplier, direction, symbol]);
+  }, [stake, multiplier, direction, symbol, currency]);
 
   return (
     <div className="space-y-5">
@@ -182,7 +185,7 @@ export const MultiplierAnalyticsView: React.FC<MultiplierAnalyticsViewProps> = (
           {/* Stake */}
           <div>
             <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
-              Stake ($ USD)
+              Stake ({currency})
             </label>
             <input
               type="number"
@@ -432,7 +435,10 @@ export const MultiplierAnalyticsView: React.FC<MultiplierAnalyticsViewProps> = (
       </div>
 
       {/* 4. Live Multiplier Proposal & Execution Trigger */}
-      <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/90 shadow-xl space-y-4">
+      <div
+        id="order-execution-card"
+        className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/90 shadow-xl space-y-4"
+      >
         <div className="flex items-center justify-between">
           <div>
             <h4 className="text-sm font-bold text-white flex items-center gap-2">

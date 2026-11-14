@@ -126,6 +126,12 @@ export default function App() {
         key: Date.now(),
       });
     }
+    window.setTimeout(() => {
+      document.getElementById('order-execution-card')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 80);
   };
 
   // Open trade confirmation modal
@@ -184,7 +190,8 @@ export default function App() {
         isAuthorized={userAccount.isAuthorized}
         loginId={userAccount.loginid}
         balance={userAccount.balance}
-        currency={userAccount.currency}
+        currency={userAccount.currency || 'USD'}
+        onSelectCurrency={(cur) => setUserAccount((prev) => ({ ...prev, currency: cur }))}
         popupsEnabled={popupsEnabled}
         onTogglePopups={togglePopups}
       />
@@ -262,6 +269,7 @@ export default function App() {
                 patterns={patterns}
                 latestTick={latestTick}
                 symbol={symbol}
+                currency={userAccount.currency || 'USD'}
                 onInitiateOrder={handleInitiateOrder}
                 prefillConfig={digitPrefill}
               />
@@ -269,6 +277,7 @@ export default function App() {
               <MultiplierAnalyticsView
                 latestTick={latestTick}
                 symbol={symbol}
+                currency={userAccount.currency || 'USD'}
                 onInitiateOrder={handleInitiateOrder}
                 prefillConfig={multiplierPrefill}
               />

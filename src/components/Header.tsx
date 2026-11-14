@@ -14,9 +14,12 @@ interface HeaderProps {
   loginId?: string;
   balance?: number;
   currency?: string;
+  onSelectCurrency?: (currency: string) => void;
   popupsEnabled: boolean;
   onTogglePopups: () => void;
 }
+
+const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'GBP', 'AUD', 'USDC'];
 
 export const Header: React.FC<HeaderProps> = ({
   currentSymbol,
@@ -28,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   loginId,
   balance,
   currency = 'USD',
+  onSelectCurrency,
   popupsEnabled,
   onTogglePopups,
 }) => {
@@ -116,6 +120,22 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+
+        {/* Stake Currency Selector */}
+        {onSelectCurrency && (
+          <select
+            aria-label="Stake Currency"
+            value={currency}
+            onChange={(e) => onSelectCurrency(e.target.value)}
+            className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono font-semibold text-slate-200 hover:border-slate-700 focus:outline-hidden focus:border-cyan-500 cursor-pointer"
+          >
+            {SUPPORTED_CURRENCIES.map((cur) => (
+              <option key={cur} value={cur}>
+                {cur}
+              </option>
+            ))}
+          </select>
+        )}
 
         {/* Live WebSocket Connection Status */}
         <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400 font-mono">
@@ -211,7 +231,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="font-mono">{loginId || 'Authorized'}</span>
             {balance !== undefined && (
               <span className="font-mono tabular-nums text-slate-200">
-                ${balance.toFixed(2)}
+                {currency} {balance.toFixed(2)}
               </span>
             )}
           </button>

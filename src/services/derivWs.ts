@@ -476,10 +476,12 @@ class DerivWebSocketService {
     contractType: 'DIGITMATCH' | 'DIGITDIFF' | 'MULTUP' | 'MULTDOWN';
     stake: number;
     symbol: string;
+    currency?: string;
     duration?: number;
     barrier?: string;
     multiplier?: number;
   }): Promise<DerivProposal | null> {
+    const currency = params.currency || 'USD';
     if (this.isSimulated) {
       const meta = getSymbolMeta(params.symbol);
       const isMatch = params.contractType === 'DIGITMATCH';
@@ -518,7 +520,7 @@ class DerivWebSocketService {
         amount: params.stake,
         basis: 'stake',
         contract_type: params.contractType,
-        currency: 'USD',
+        currency,
       };
 
       if (this.isNewApiSocket(sock)) {

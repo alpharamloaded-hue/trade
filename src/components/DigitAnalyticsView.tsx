@@ -12,6 +12,7 @@ interface DigitAnalyticsViewProps {
   patterns: PatternDetection[];
   latestTick: TickData | null;
   symbol: string;
+  currency?: string;
   onInitiateOrder: (proposal: DerivProposal, contractType: string, targetDigit: number) => void;
   prefillConfig?: {
     contractType: 'DIGITMATCH' | 'DIGITDIFF';
@@ -28,6 +29,7 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
   patterns,
   latestTick,
   symbol,
+  currency = 'USD',
   onInitiateOrder,
   prefillConfig,
 }) => {
@@ -65,6 +67,7 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
         contractType,
         stake,
         symbol,
+        currency,
         duration: 1,
         barrier: String(selectedDigit),
       })
@@ -84,7 +87,7 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [selectedDigit, contractType, stake, symbol]);
+  }, [selectedDigit, contractType, stake, symbol, currency]);
 
   // Selected digit stats
   const selectedStat = digitStats.find((s) => s.digit === selectedDigit) || digitStats[0];
@@ -393,7 +396,10 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
       </div>
 
       {/* 5. Contract Proposal Preview (Match / Differ Execution) */}
-      <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800/90 shadow-xl">
+      <div
+        id="order-execution-card"
+        className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800/90 shadow-xl"
+      >
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -469,7 +475,7 @@ export const DigitAnalyticsView: React.FC<DigitAnalyticsViewProps> = ({
           {/* Stake Input */}
           <div>
             <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              Stake (USD)
+              Stake ({currency})
             </label>
             <div className="flex items-center gap-2">
               <div className="relative w-full">

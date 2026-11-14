@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Compass, Flame, HelpCircle, Lightbulb, Radio, Shield, Sparkles, Target, TrendingUp, Zap } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronUp, HelpCircle, Lightbulb, Lock, Unlock, Zap } from 'lucide-react';
 import React, { useState } from 'react';
 import { DigitStat, PatternDetection, TickData, TradeEntrySignal } from '../types/deriv';
 import { generateDigitEntrySignal, generateMultiplierEntrySignal } from '../utils/entrySignals';
@@ -24,12 +24,14 @@ export const TradeEntryRadar: React.FC<TradeEntryRadarProps> = ({
     activeTab === 'digits' ? 'digits' : 'multiplier'
   );
   const [showGuide, setShowGuide] = useState(false);
+  const [frozenSignal, setFrozenSignal] = useState<TradeEntrySignal | null>(null);
 
   // Generate current signals
   const digitSignal = generateDigitEntrySignal(digitStats, ticks, patterns);
   const multiplierSignal = generateMultiplierEntrySignal(ticks, latestTick);
 
-  const activeSignal = signalMode === 'digits' ? digitSignal : multiplierSignal;
+  const liveSignal = signalMode === 'digits' ? digitSignal : multiplierSignal;
+  const activeSignal = frozenSignal || liveSignal;
   const isStrong = activeSignal.status === 'STRONG_ENTRY';
   const isFavorable = activeSignal.status === 'FAVORABLE_SETUP';
 
@@ -77,11 +79,14 @@ export const TradeEntryRadar: React.FC<TradeEntryRadarProps> = ({
           </div>
         </div>
 
-        {/* Quick Signal Mode Tabs & Strategy Guide Button */}
-        <div className="flex items-center gap-2">
+        {/* Quick Signal Mode Tabs, Freeze & Strategy Guide Button */}
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs font-mono">
             <button
-              onClick={() => setSignalMode('digits')}
+              onClick={() => {
+                setSignalMode('digits');
+                setFrozenSignal(null);
+              }}
               className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
                 signalMode === 'digits'
                   ? 'bg-cyan-600 text-white font-bold shadow-xs'
@@ -91,7 +96,10 @@ export const TradeEntryRadar: React.FC<TradeEntryRadarProps> = ({
               Digit Radar
             </button>
             <button
-              onClick={() => setSignalMode('multiplier')}
+              onClick={() => {
+                setSignalMode('multiplier');
+                setFrozenSignal(null);
+              }}
               className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
                 signalMode === 'multiplier'
                   ? 'bg-emerald-600 text-white font-bold shadow-xs'
@@ -101,6 +109,20 @@ export const TradeEntryRadar: React.FC<TradeEntryRadarProps> = ({
               Multiplier Radar
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setFrozenSignal((prev) => (prev ? null : liveSignal))}
+            title={frozenSignal ? 'Resume live probability updates' : 'Freeze this setup so it stops changing while you trade'}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-colors cursor-pointer ${
+              frozenSignal
+                ? 'bg-amber-950/60 border-amber-700/70 text-amber-300 font-semibold'
+                : 'bg-slate-900 hover:bg-slate-850 text-slate-300 border-slate-800'
+            }`}
+          >
+            {frozenSignal ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5 text-slate-400" />}
+            <span>{frozenSignal ? 'Locked (Resume)' : 'Freeze Setup'}</span>
+          </button>
 
           <button
             onClick={() => setShowGuide(!showGuide)}
@@ -171,7 +193,10 @@ export const TradeEntryRadar: React.FC<TradeEntryRadarProps> = ({
 
             {/* Quick 1-Click Setup Action */}
             <button
-              onClick={() => onApplySignal(activeSignal)}
+              onClick={() => {
+                setFrozenSignal(activeSignal);
+                onApplySignal(activeSignal);
+              }}
               className="py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-bold text-xs shadow-lg shadow-cyan-950/60 flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap active:scale-95"
             >
               <Zap className="w-4 h-4 fill-white" />
