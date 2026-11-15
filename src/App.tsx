@@ -4,7 +4,7 @@
  */
 
 import { BarChart3, Clock, Flame, Gauge, Layers, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivePositionsTracker } from './components/ActivePositionsTracker';
 import { AuthModal } from './components/AuthModal';
 import { DigitAnalyticsView } from './components/DigitAnalyticsView';
@@ -143,6 +143,251 @@ export default function App() {
     setPendingOrder({ proposal, contractType, targetParam });
   };
 
+  // Reusable helper to ensure authenticated WebSocket (OTP or legacy PAT) is open
+  const ensureAuthSocketConnected = useCallback(async (): Promise<boolean> => {
+    if (derivWs.isAuthSocketOpen()) {
+      return false;
+    }
+
+    if (userAccount.authMethod === 'oauth2' || userAccount.authMethod === 'pat-rest') {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${userAccount.token}`,
+        'Content-Type': 'application/json',
+      };
+      if (userAccount.appId && userAccount.appId !== '1089') {
+        headers['Deriv-App-ID'] = userAccount.appId;
+      }
+
+      let accountId = userAccount.loginid;
+      if (!accountId || accountId.startsWith('OAuth App') || accountId.startsWith('PAT App')) {
+        const accResp = await fetch('/api/deriv/accounts', { headers });
+        if (accResp.status === 401) {
+          throw new Error('Your Deriv session expired (401). Please re-authorize in Connect API.');
+        }
+        const accData = (await accResp.json()) as {
+          accounts?: Array<{ accountId: string; currency?: string; balance?: number }>;
+        };
+        const first = accData.accounts?.[0];
+        if (!first?.accountId) {
+          throw new Error('No Deriv Options trading account found on this token.');
+        }
+        accountId = first.accountId;
+        setUserAccount((prev) => ({
+          ...prev,
+          accounts: accData.accounts,
+          loginid: first.accountId,
+          balance: first.balance ?? prev.balance,
+          currency: first.currency || prev.currency,
+        }));
+      }
+
+      const otpResp = await fetch('/api/deriv/otp', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ accountId, appId: userAccount.appId }),
+      });
+
+      if (otpResp.status === 401) {
+        throw new Error('Your Deriv session expired (401). Please re-authorize in Connect API.');
+      }
+
+      const otpData = (await otpResp.json()) as Record<string, unknown>;
+      const nestedOtpData =
+        otpData.data && typeof otpData.data === 'object'
+          ? (otpData.data as Record<string, unknown>)
+          : undefined;
+      const otpUrl = String(
+        otpData.url || nestedOtpData?.url || otpData.websocket_url || otpData.ws_url || ''
+      );
+      if (!otpResp.ok || !otpUrl.startsWith('wss://')) {
+        const errMsg =
+          typeof otpData.message === 'string'
+            ? otpData.message
+            : typeof otpData.error === 'string'
+              ? otpData.error
+              : otpData.error && typeof otpData.error === 'object'
+                ? String((otpData.error as Record<string, unknown>).message || '')
+                : '';
+        throw new Error(errMsg || 'Could not obtain a live OTP WebSocket URL from Deriv.');
+      }
+
+      await derivWs.connectWithOtpUrlAndWait(otpUrl);
+      setUserAccount((prev) => ({ ...prev, otpWsUrl: otpUrl }));
+      return true;
+    }
+
+    if (userAccount.authMethod === 'pat') {
+      await derivWs.authorize(userAccount.token);
+      return true;
+    }
+
+    throw new Error('No trading account connected.');
+  }, [userAccount.appId, userAccount.authMethod, userAccount.loginid, userAccount.token]);
+
+  // Subscribe to real-time contract updates (won/lost/sold/P&L) and live balance
+  useEffect(() => {
+    const unsubContract = derivWs.onContract((updated) => {
+      setActiveContracts((prev) => {
+        const idx = prev.findIndex((c) => c.contract_id === updated.contract_id);
+        if (idx === -1) return prev;
+        const existing = prev[idx];
+        const merged: OpenContract = {
+          ...existing,
+          ...updated,
+          contract_type: updated.contract_type || existing.contract_type,
+          buy_price: updated.buy_price > 0 ? updated.buy_price : existing.buy_price,
+          entry_tick: updated.entry_tick || existing.entry_tick,
+        };
+        const next = [...prev];
+        next[idx] = merged;
+
+        // If a live contract just transitioned from open -> settled, credit demo/update balance if needed
+        if (existing.status === 'open' && merged.status !== 'open') {
+          if (merged.sell_price !== undefined) {
+            // Live WS balance subscription handles real balance; fallback if needed via REST below
+          }
+        }
+        return next;
+      });
+    });
+
+    const unsubBalance = derivWs.onBalance((bal, cur) => {
+      setUserAccount((prev) => {
+        if (!prev.isAuthorized || prev.authMethod === 'demo') return prev;
+        return {
+          ...prev,
+          balance: bal,
+          currency: cur || prev.currency,
+        };
+      });
+    });
+
+    return () => {
+      unsubContract();
+      unsubBalance();
+    };
+  }, []);
+
+  // Poll open live contracts so fast 1-tick digit trades never stay stuck as 'open'
+  const openLiveContractIds = activeContracts
+    .filter((c) => c.status === 'open')
+    .map((c) => c.contract_id)
+    .join(',');
+
+  useEffect(() => {
+    if (!openLiveContractIds) return;
+    if (userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive())) {
+      return;
+    }
+
+    const ids = openLiveContractIds
+      .split(',')
+      .map((s) => Number(s))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    let cancelled = false;
+    let reconnectAttempted = false;
+
+    const pollOpen = async () => {
+      if (cancelled) return;
+      if (!derivWs.isAuthSocketOpen()) {
+        if (reconnectAttempted) return;
+        reconnectAttempted = true;
+        try {
+          await ensureAuthSocketConnected();
+        } catch {
+          return;
+        }
+      }
+      for (const id of ids) {
+        if (cancelled) return;
+        try {
+          await derivWs.fetchContractStatus(id);
+        } catch {
+          // Ignore transient poll errors
+        }
+      }
+    };
+
+    const firstTimer = window.setTimeout(pollOpen, 1200);
+    const interval = window.setInterval(pollOpen, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstTimer);
+      window.clearInterval(interval);
+    };
+  }, [openLiveContractIds, userAccount.authMethod, userAccount.isAuthorized, ensureAuthSocketConnected]);
+
+  // Simulate real-time P/L and auto-settlement on Virtual Demo Mode contracts
+  useEffect(() => {
+    if (!latestTick) return;
+    const isDemo =
+      userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive());
+    if (!isDemo) return;
+
+    setActiveContracts((prev) => {
+      let hasChanges = false;
+      let balanceDelta = 0;
+
+      const next = prev.map((c) => {
+        if (c.status !== 'open') return c;
+
+        if (c.contract_type.startsWith('DIGIT')) {
+          const target = Number(c.barrier ?? 0);
+          const isMatch = c.contract_type === 'DIGITMATCH';
+          const won = isMatch ? latestTick.lastDigit === target : latestTick.lastDigit !== target;
+          const payout = c.payout ?? (isMatch ? Number((c.buy_price * 9.2).toFixed(2)) : Number((c.buy_price * 1.09).toFixed(2)));
+          const profit = won ? Number((payout - c.buy_price).toFixed(2)) : Number((-c.buy_price).toFixed(2));
+          const profitPct = c.buy_price > 0 ? Number(((profit / c.buy_price) * 100).toFixed(1)) : 0;
+
+          if (won) {
+            balanceDelta += payout;
+          }
+          hasChanges = true;
+          return {
+            ...c,
+            current_spot: latestTick.quote,
+            exit_tick: latestTick.quote,
+            profit,
+            profit_percentage: profitPct,
+            status: (won ? 'won' : 'lost') as OpenContract['status'],
+          };
+        }
+
+        if (c.contract_type.startsWith('MULT') && c.entry_tick > 0) {
+          const mult = c.multiplier || 100;
+          const dir = c.contract_type === 'MULTUP' ? 1 : -1;
+          const rawPnl = c.buy_price * mult * dir * ((latestTick.quote - c.entry_tick) / c.entry_tick);
+          const clampedPnl = Math.max(-c.buy_price, Number(rawPnl.toFixed(2)));
+          const profitPct = c.buy_price > 0 ? Number(((clampedPnl / c.buy_price) * 100).toFixed(1)) : 0;
+          const stoppedOut = clampedPnl <= -c.buy_price;
+
+          hasChanges = true;
+          return {
+            ...c,
+            current_spot: latestTick.quote,
+            exit_tick: stoppedOut ? latestTick.quote : undefined,
+            profit: clampedPnl,
+            profit_percentage: profitPct,
+            status: (stoppedOut ? 'lost' : 'open') as OpenContract['status'],
+          };
+        }
+
+        return c;
+      });
+
+      if (balanceDelta > 0) {
+        setUserAccount((acc) => ({
+          ...acc,
+          balance: Number(((acc.balance || 0) + balanceDelta).toFixed(2)),
+        }));
+      }
+
+      return hasChanges ? next : prev;
+    });
+  }, [latestTick, userAccount.authMethod, userAccount.isAuthorized]);
+
   // Execute trade after secondary user confirmation (auto-connects OTP/PAT auth socket if needed)
   const handleConfirmOrder = async (proposal: DerivProposal) => {
     const contractType = pendingOrder?.contractType || 'DIGITMATCH';
@@ -152,6 +397,7 @@ export default function App() {
     // Virtual demo account execution (works even while streaming live Deriv ticks)
     if (userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive())) {
       const mockId = Math.floor(Math.random() * 900000) + 100000;
+      const isDigit = contractType.startsWith('DIGIT');
       const newContract: OpenContract = {
         contract_id: mockId,
         contract_type: contractType,
@@ -161,6 +407,10 @@ export default function App() {
         profit_percentage: 0,
         status: 'open',
         entry_tick: proposal.spot,
+        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+        payout: proposal.payout,
+        is_valid_to_sell: isDigit ? 0 : 1,
         date_start: Math.floor(Date.now() / 1000),
       };
       setActiveContracts((prev) => [newContract, ...prev]);
@@ -180,79 +430,7 @@ export default function App() {
     }
 
     let targetProposal = proposal;
-    let reconnectedAuth = false;
-
-    if (userAccount.authMethod === 'oauth2' || userAccount.authMethod === 'pat-rest') {
-      if (!derivWs.isAuthSocketOpen()) {
-        const headers: Record<string, string> = {
-          Authorization: `Bearer ${userAccount.token}`,
-          'Content-Type': 'application/json',
-        };
-        if (userAccount.appId && userAccount.appId !== '1089') {
-          headers['Deriv-App-ID'] = userAccount.appId;
-        }
-
-        let accountId = userAccount.loginid;
-        if (!accountId || accountId.startsWith('OAuth App') || accountId.startsWith('PAT App')) {
-          const accResp = await fetch('/api/deriv/accounts', { headers });
-          if (accResp.status === 401) {
-            throw new Error('Your Deriv session expired (401). Please re-authorize in Connect API.');
-          }
-          const accData = (await accResp.json()) as { accounts?: Array<{ accountId: string; currency?: string; balance?: number }> };
-          const first = accData.accounts?.[0];
-          if (!first?.accountId) {
-            throw new Error('No Deriv Options trading account found on this token.');
-          }
-          accountId = first.accountId;
-          setUserAccount((prev) => ({
-            ...prev,
-            accounts: accData.accounts,
-            loginid: first.accountId,
-            balance: first.balance ?? prev.balance,
-            currency: first.currency || prev.currency,
-          }));
-        }
-
-        const otpResp = await fetch('/api/deriv/otp', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ accountId, appId: userAccount.appId }),
-        });
-
-        if (otpResp.status === 401) {
-          throw new Error('Your Deriv session expired (401). Please re-authorize in Connect API.');
-        }
-
-        const otpData = (await otpResp.json()) as Record<string, unknown>;
-        const nestedOtpData =
-          otpData.data && typeof otpData.data === 'object'
-            ? (otpData.data as Record<string, unknown>)
-            : undefined;
-        const otpUrl = String(
-          otpData.url || nestedOtpData?.url || otpData.websocket_url || otpData.ws_url || ''
-        );
-        if (!otpResp.ok || !otpUrl.startsWith('wss://')) {
-          const errMsg =
-            typeof otpData.message === 'string'
-              ? otpData.message
-              : typeof otpData.error === 'string'
-                ? otpData.error
-                : otpData.error && typeof otpData.error === 'object'
-                  ? String((otpData.error as Record<string, unknown>).message || '')
-                  : '';
-          throw new Error(errMsg || 'Could not obtain a live OTP WebSocket URL from Deriv.');
-        }
-
-        await derivWs.connectWithOtpUrlAndWait(otpUrl);
-        setUserAccount((prev) => ({ ...prev, otpWsUrl: otpUrl }));
-        reconnectedAuth = true;
-      }
-    } else if (userAccount.authMethod === 'pat') {
-      if (!derivWs.isAuthSocketOpen()) {
-        await derivWs.authorize(userAccount.token);
-        reconnectedAuth = true;
-      }
-    }
+    const reconnectedAuth = await ensureAuthSocketConnected();
 
     const fetchBoundProposal = async () => {
       const isDigit = contractType.startsWith('DIGIT');
@@ -290,8 +468,9 @@ export default function App() {
     }
 
     if (res && res.buy) {
+      const isDigit = contractType.startsWith('DIGIT');
       const newContract: OpenContract = {
-        contract_id: res.buy.contract_id,
+        contract_id: Number(res.buy.contract_id),
         contract_type: contractType,
         buy_price: Number(res.buy.buy_price ?? targetProposal.ask_price),
         current_spot: targetProposal.spot,
@@ -299,7 +478,11 @@ export default function App() {
         profit_percentage: 0,
         status: 'open',
         entry_tick: targetProposal.spot,
-        date_start: Math.floor(Date.now() / 1000),
+        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+        payout: Number(res.buy.payout ?? targetProposal.payout),
+        is_valid_to_sell: isDigit ? 0 : 1,
+        date_start: Number(res.buy.start_time ?? Math.floor(Date.now() / 1000)),
       };
       setActiveContracts((prev) => [newContract, ...prev]);
 
@@ -312,10 +495,69 @@ export default function App() {
     }
   };
 
-  const handleSellSuccess = (contractId: number) => {
-    setActiveContracts((prev) =>
-      prev.map((c) => (c.contract_id === contractId ? { ...c, status: 'sold' as const } : c))
-    );
+  const handleClosePosition = async (contractId: number) => {
+    const isDemo =
+      userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive());
+    if (isDemo) {
+      const target = activeContracts.find((c) => c.contract_id === contractId);
+      setActiveContracts((prev) =>
+        prev.map((c) => (c.contract_id === contractId ? { ...c, status: 'sold' as const } : c))
+      );
+      if (target) {
+        const returnAmount = Math.max(0, target.buy_price + target.profit);
+        setUserAccount((acc) => ({
+          ...acc,
+          balance: Number(((acc.balance || 0) + returnAmount).toFixed(2)),
+        }));
+      }
+      return;
+    }
+
+    await ensureAuthSocketConnected();
+    try {
+      const sellRes = await derivWs.sellContract(contractId);
+      const soldFor = sellRes?.sell?.sold_for !== undefined ? Number(sellRes.sell.sold_for) : undefined;
+      setActiveContracts((prev) =>
+        prev.map((c) => {
+          if (c.contract_id !== contractId) return c;
+          const profit = soldFor !== undefined ? Number((soldFor - c.buy_price).toFixed(2)) : c.profit;
+          const profitPct =
+            c.buy_price > 0 ? Number(((profit / c.buy_price) * 100).toFixed(1)) : c.profit_percentage;
+          return {
+            ...c,
+            status: 'sold',
+            profit,
+            profit_percentage: profitPct,
+          };
+        })
+      );
+      if (sellRes?.sell?.balance_after !== undefined) {
+        setUserAccount((prev) => ({
+          ...prev,
+          balance: Number(sellRes.sell.balance_after),
+        }));
+      }
+    } catch (err) {
+      // Refresh contract state immediately so already-settled trades flip from OPEN -> WON/LOST/SOLD
+      await derivWs.fetchContractStatus(contractId).catch(() => {});
+      throw err;
+    }
+  };
+
+  const handleRefreshContract = async (contractId: number) => {
+    const isDemo =
+      userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive());
+    if (isDemo) return;
+    await ensureAuthSocketConnected();
+    await derivWs.fetchContractStatus(contractId);
+  };
+
+  const handleDismissContract = (contractId: number) => {
+    setActiveContracts((prev) => prev.filter((c) => c.contract_id !== contractId));
+  };
+
+  const handleClearSettled = () => {
+    setActiveContracts((prev) => prev.filter((c) => c.status === 'open'));
   };
 
   return (
@@ -398,7 +640,10 @@ export default function App() {
             <ActivePositionsTracker
               contracts={activeContracts}
               currency={userAccount.currency || 'USD'}
-              onSellSuccess={handleSellSuccess}
+              onClosePosition={handleClosePosition}
+              onRefreshContract={handleRefreshContract}
+              onDismissContract={handleDismissContract}
+              onClearSettled={handleClearSettled}
             />
           </div>
 

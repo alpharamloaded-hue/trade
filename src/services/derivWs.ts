@@ -13,6 +13,7 @@ type TickCallback = (tick: TickData) => void;
 type HistoryCallback = (ticks: TickData[]) => void;
 type ProposalCallback = (proposal: DerivProposal | null, error?: string) => void;
 type OpenContractCallback = (contract: OpenContract) => void;
+type BalanceCallback = (balance: number, currency?: string, loginid?: string) => void;
 type StatusCallback = (status: 'connected' | 'connecting' | 'disconnected' | 'error', pingMs: number) => void;
 
 interface PendingRequest {
@@ -56,6 +57,7 @@ class DerivWebSocketService {
   private historyListeners: Set<HistoryCallback> = new Set();
   private proposalListeners: Set<ProposalCallback> = new Set();
   private contractListeners: Set<OpenContractCallback> = new Set();
+  private balanceListeners: Set<BalanceCallback> = new Set();
   private statusListeners: Set<StatusCallback> = new Set();
 
   private pendingRequests: Map<number, PendingRequest> = new Map();
@@ -176,6 +178,7 @@ class DerivWebSocketService {
         sock.onopen = () => {
           if (this.authWs !== sock) return;
           this.notifyStatus('connected', this.pingMs);
+          this.sendRaw(sock, { balance: 1, subscribe: 1 }).catch(() => {});
           if (!settled) {
             settled = true;
             window.clearTimeout(timer);
@@ -454,7 +457,11 @@ class DerivWebSocketService {
     this.connectPublicStream();
 
     const sock = await this.ensureLegacyAuthSocket();
-    return this.sendRequestOnSocket(sock, { authorize: cleanToken });
+    const res = await this.sendRequestOnSocket(sock, { authorize: cleanToken });
+    if (res?.authorize) {
+      this.sendRaw(sock, { balance: 1, subscribe: 1 }).catch(() => {});
+    }
+    return res;
   }
 
   public subscribeSymbol(symbol: string): void {
@@ -623,9 +630,10 @@ class DerivWebSocketService {
     const buyRes: any = await this.sendRequestOnSocket(this.authWs, {
       buy: proposalId,
       price,
+      subscribe: 1,
     });
 
-    if (buyRes?.buy?.contract_id) {
+    if (buyRes?.buy?.contract_id && !buyRes?.subscription) {
       this.sendRaw(this.authWs, {
         proposal_open_contract: 1,
         contract_id: buyRes.buy.contract_id,
@@ -636,6 +644,74 @@ class DerivWebSocketService {
     return buyRes;
   }
 
+  public async fetchContractStatus(contractId: number, subscribe: boolean = false): Promise<OpenContract | null> {
+    if (this.isSimulated) return null;
+    if (!this.authWs || this.authWs.readyState !== WebSocket.OPEN) {
+      return null;
+    }
+
+    let parsed: OpenContract | null = null;
+    try {
+      const payload: Record<string, unknown> = {
+        proposal_open_contract: 1,
+        contract_id: contractId,
+      };
+      if (subscribe) {
+        payload.subscribe = 1;
+      }
+      const res: any = await this.sendRequestOnSocket(this.authWs, payload);
+      if (res?.proposal_open_contract) {
+        parsed = this.parseOpenContract(res.proposal_open_contract);
+        if (parsed.status !== 'open') {
+          return parsed;
+        }
+      }
+    } catch {
+      // Fall through to profit_table check below
+    }
+
+    // Fallback: check profit_table in case a 1-tick contract settled before proposal_open_contract updated
+    try {
+      const ptRes: any = await this.sendRequestOnSocket(this.authWs, {
+        profit_table: 1,
+        limit: 15,
+        sort: 'DESC',
+      });
+      const txList: any[] = ptRes?.profit_table?.transactions || [];
+      const match = txList.find((tx) => Number(tx.contract_id) === Number(contractId));
+      if (match) {
+        const buyPrice = Number(match.buy_price ?? parsed?.buy_price ?? 0);
+        const sellPrice = Number(match.sell_price ?? 0);
+        const profit = Number((sellPrice - buyPrice).toFixed(2));
+        const profitPct = buyPrice > 0 ? Number(((profit / buyPrice) * 100).toFixed(1)) : 0;
+        const settled: OpenContract = {
+          ...(parsed || {
+            contract_id: Number(contractId),
+            contract_type: String(match.contract_type || ''),
+            buy_price: buyPrice,
+            current_spot: 0,
+            entry_tick: 0,
+            date_start: Number(match.purchase_time ?? Math.floor(Date.now() / 1000)),
+          }),
+          buy_price: buyPrice,
+          sell_price: sellPrice,
+          payout: Number(match.payout ?? sellPrice),
+          profit,
+          profit_percentage: profitPct,
+          is_sold: 1,
+          is_valid_to_sell: 0,
+          status: sellPrice > 0 ? 'won' : 'lost',
+        };
+        this.notifyContract(settled);
+        return settled;
+      }
+    } catch {
+      // Ignore profit_table fallback failure
+    }
+
+    return parsed;
+  }
+
   public async sellContract(contractId: number): Promise<any> {
     if (this.isSimulated) {
       return { sell: { sold_for: 10, contract_id: contractId } };
@@ -643,10 +719,18 @@ class DerivWebSocketService {
     if (!this.authWs || this.authWs.readyState !== WebSocket.OPEN) {
       throw new Error('Authenticated trading WebSocket is not active. Reconnect OTP in Account modal.');
     }
-    return this.sendRequestOnSocket(this.authWs, {
+    const sellRes: any = await this.sendRequestOnSocket(this.authWs, {
       sell: contractId,
       price: 0,
     });
+    if (sellRes?.sell?.balance_after !== undefined) {
+      this.notifyBalance(Number(sellRes.sell.balance_after));
+    }
+    this.sendRaw(this.authWs, {
+      proposal_open_contract: 1,
+      contract_id: contractId,
+    }).catch(() => {});
+    return sellRes;
   }
 
   // --- Internal Message Router ---
@@ -746,24 +830,73 @@ class DerivWebSocketService {
       return;
     }
 
+    if (data.msg_type === 'balance' && data.balance) {
+      const bal = Number(data.balance.balance);
+      if (Number.isFinite(bal)) {
+        this.notifyBalance(bal, data.balance.currency, data.balance.loginid);
+      }
+      return;
+    }
+
     if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
-      const poc = data.proposal_open_contract;
-      const contract: OpenContract = {
-        contract_id: poc.contract_id,
-        contract_type: poc.contract_type,
-        buy_price: Number(poc.buy_price),
-        current_spot: Number(poc.current_spot),
-        profit: Number(poc.profit),
-        profit_percentage: Number(poc.profit_percentage),
-        status: poc.status,
-        entry_tick: Number(poc.entry_tick || poc.barrier),
-        barrier: poc.barrier,
-        date_start: poc.date_start,
-        multiplier: poc.multiplier,
-        is_valid_to_sell: poc.is_valid_to_sell,
-      };
+      const contract = this.parseOpenContract(data.proposal_open_contract);
       this.notifyContract(contract);
     }
+  }
+
+  private parseOpenContract(poc: Record<string, any>): OpenContract {
+    const buyPrice = Number(poc.buy_price ?? 0);
+    const profit = Number(poc.profit ?? 0);
+    const rawStatus = poc.status as string | null | undefined;
+    const isSoldFlag = Number(poc.is_sold || 0) === 1;
+    const isExpiredFlag = Number(poc.is_expired || 0) === 1;
+
+    let status: OpenContract['status'] =
+      rawStatus === 'won' ||
+      rawStatus === 'lost' ||
+      rawStatus === 'sold' ||
+      rawStatus === 'cancelled'
+        ? rawStatus
+        : isExpiredFlag
+          ? profit >= 0
+            ? 'won'
+            : 'lost'
+          : isSoldFlag
+            ? 'sold'
+            : 'open';
+
+    const profitPct =
+      poc.profit_percentage !== undefined && Number.isFinite(Number(poc.profit_percentage))
+        ? Number(poc.profit_percentage)
+        : buyPrice > 0
+          ? Number(((profit / buyPrice) * 100).toFixed(2))
+          : 0;
+
+    return {
+      contract_id: Number(poc.contract_id),
+      contract_type: String(poc.contract_type || ''),
+      buy_price: buyPrice,
+      current_spot: Number(poc.current_spot ?? poc.exit_spot ?? poc.entry_spot ?? poc.entry_tick ?? 0),
+      profit,
+      profit_percentage: profitPct,
+      status,
+      entry_tick: Number(poc.entry_spot ?? poc.entry_tick ?? poc.barrier ?? 0),
+      exit_tick:
+        poc.exit_spot !== undefined && poc.exit_spot !== null
+          ? Number(poc.exit_spot)
+          : poc.exit_tick !== undefined && poc.exit_tick !== null
+            ? Number(poc.exit_tick)
+            : undefined,
+      barrier: poc.barrier !== undefined && poc.barrier !== null ? String(poc.barrier) : undefined,
+      date_start: Number(poc.date_start ?? poc.purchase_time ?? Math.floor(Date.now() / 1000)),
+      multiplier: poc.multiplier !== undefined ? Number(poc.multiplier) : undefined,
+      payout: poc.payout !== undefined ? Number(poc.payout) : undefined,
+      sell_price: poc.sell_price !== undefined && poc.sell_price !== null ? Number(poc.sell_price) : undefined,
+      is_valid_to_sell: poc.is_valid_to_sell !== undefined ? Number(poc.is_valid_to_sell) : undefined,
+      is_sold: poc.is_sold !== undefined ? Number(poc.is_sold) : undefined,
+      validation_error: typeof poc.validation_error === 'string' ? poc.validation_error : undefined,
+      symbol: typeof poc.underlying_symbol === 'string' ? poc.underlying_symbol : undefined,
+    };
   }
 
   private sendRequestOnSocket(
@@ -894,6 +1027,11 @@ class DerivWebSocketService {
     return () => this.contractListeners.delete(cb);
   }
 
+  public onBalance(cb: BalanceCallback): () => void {
+    this.balanceListeners.add(cb);
+    return () => this.balanceListeners.delete(cb);
+  }
+
   public onStatus(cb: StatusCallback): () => void {
     this.statusListeners.add(cb);
     return () => this.statusListeners.delete(cb);
@@ -935,6 +1073,16 @@ class DerivWebSocketService {
         cb(c);
       } catch (err) {
         console.error('Contract listener error:', err);
+      }
+    });
+  }
+
+  private notifyBalance(balance: number, currency?: string, loginid?: string): void {
+    this.balanceListeners.forEach((cb) => {
+      try {
+        cb(balance, currency, loginid);
+      } catch (err) {
+        console.error('Balance listener error:', err);
       }
     });
   }

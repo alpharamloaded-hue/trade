@@ -79,12 +79,19 @@ export interface OpenContract {
   current_spot: number;
   profit: number;
   profit_percentage: number;
-  status: 'open' | 'won' | 'lost' | 'sold';
+  status: 'open' | 'won' | 'lost' | 'sold' | 'cancelled';
   entry_tick: number;
+  exit_tick?: number;
   barrier?: string;
   date_start: number;
   multiplier?: number;
+  payout?: number;
+  sell_price?: number;
   is_valid_to_sell?: number;
+  is_sold?: number;
+  validation_error?: string;
+  symbol?: string;
+  ticks_elapsed?: number;
 }
 
 export interface DerivRestAccount {
