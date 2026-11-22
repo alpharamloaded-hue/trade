@@ -670,9 +670,14 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(__dirname, 'dist');
+    console.log('[Server] Serving static from:', distDir);
+    console.log('[Server] Dist exists:', require('fs').existsSync(distDir));
+    console.log('[Server] Dist contents:', require('fs').readdirSync(distDir));
     app.use(express.static(distDir));
     app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.join(distDir, 'index.html'));
+      const indexPath = path.join(distDir, 'index.html');
+      console.log('[Server] SPA fallback:', indexPath);
+      res.sendFile(indexPath);
     });
   }
 
