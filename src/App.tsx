@@ -89,6 +89,9 @@ export default function App() {
     targetParam?: string | number;
   } | null>(null);
 
+  // Trade execution lock to prevent concurrent trades
+  const [tradeLock, setTradeLock] = useState(false);
+
   // 5. Active Placed Contracts Tracker
   const [activeContracts, setActiveContracts] = useState<OpenContract[]>([]);
 
@@ -401,108 +404,124 @@ export default function App() {
 
   // Execute trade after secondary user confirmation (auto-connects OTP/PAT auth socket if needed)
   const handleConfirmOrder = async (proposal: DerivProposal) => {
-    const contractType = pendingOrder?.contractType || 'DIGITMATCH';
-    const targetParam = pendingOrder?.targetParam;
+    // Prevent concurrent trade execution
+    if (tradeLock) {
+      throw new Error('Trade already in progress. Please wait for current trade to complete.');
+    }
+    setTradeLock(true);
+
+    // Capture order parameters at call time to prevent race conditions
+    const capturedOrder = pendingOrder;
+    const contractType = capturedOrder?.contractType || 'DIGITMATCH';
+    const targetParam = capturedOrder?.targetParam;
     const currency = userAccount.currency || 'USD';
 
-    // Virtual demo account execution (works even while streaming live Deriv ticks)
-    if (userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive())) {
-      const mockId = Math.floor(Math.random() * 900000) + 100000;
-      const isDigit = contractType.startsWith('DIGIT');
-      const newContract: OpenContract = {
-        contract_id: mockId,
-        contract_type: contractType,
-        buy_price: proposal.ask_price,
-        current_spot: proposal.spot,
-        profit: 0,
-        profit_percentage: 0,
-        status: 'open',
-        entry_tick: proposal.spot,
-        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
-        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
-        payout: proposal.payout,
-        is_valid_to_sell: isDigit ? 0 : 1,
-        date_start: Math.floor(Date.now() / 1000),
-      };
-      setActiveContracts((prev) => [newContract, ...prev]);
-      if (userAccount.balance !== undefined) {
-        setUserAccount((prev) => ({
-          ...prev,
-          balance: Number(Math.max(0, (prev.balance || 10000) - proposal.ask_price).toFixed(2)),
-        }));
-      }
-      return;
-    }
-
-    if (!userAccount.isAuthorized) {
-      throw new Error(
-        'No trading account connected. Click "Connect Account" below to sign in with Deriv OAuth 2.0, paste a token, or launch Demo Mode.'
-      );
-    }
-
-    let targetProposal = proposal;
-    const reconnectedAuth = await ensureAuthSocketConnected();
-
-    const fetchBoundProposal = async () => {
-      const isDigit = contractType.startsWith('DIGIT');
-      const fresh = await derivWs.fetchProposal({
-        contractType: contractType as 'DIGITMATCH' | 'DIGITDIFF' | 'MULTUP' | 'MULTDOWN',
-        stake: proposal.ask_price,
-        symbol,
-        currency,
-        duration: isDigit ? 1 : undefined,
-        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
-        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
-        preferAuthSocket: true,
-      });
-      if (!fresh) {
-        throw new Error('Could not refresh live quote on authenticated Deriv socket. Please retry.');
-      }
-      return fresh;
-    };
-
-    if (reconnectedAuth) {
-      targetProposal = await fetchBoundProposal();
-    }
-
-    let res: any;
     try {
-      res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
-    } catch (buyErr) {
-      // If proposal was originally quoted on the public WS before authWs opened, refresh on authWs and retry once
-      if (!reconnectedAuth) {
-        targetProposal = await fetchBoundProposal();
-        res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
-      } else {
-        throw buyErr;
+      // Virtual demo account execution (works even while streaming live Deriv ticks)
+      if (userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive())) {
+        // Use timestamp + random for unique ID (avoid Math.random collision)
+        const mockId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+        const isDigit = contractType.startsWith('DIGIT');
+        const newContract: OpenContract = {
+          contract_id: mockId,
+          contract_type: contractType,
+          buy_price: proposal.ask_price,
+          current_spot: proposal.spot,
+          profit: 0,
+          profit_percentage: 0,
+          status: 'open',
+          entry_tick: proposal.spot,
+          barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+          multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+          payout: proposal.payout,
+          is_valid_to_sell: isDigit ? 0 : 1,
+          date_start: Math.floor(Date.now() / 1000),
+        };
+        setActiveContracts((prev) => [newContract, ...prev]);
+        if (userAccount.balance !== undefined) {
+          setUserAccount((prev) => ({
+            ...prev,
+            balance: Number(Math.max(0, (prev.balance || 10000) - proposal.ask_price).toFixed(2)),
+          }));
+        }
+        return;
       }
-    }
 
-    if (res && res.buy) {
-      const isDigit = contractType.startsWith('DIGIT');
-      const newContract: OpenContract = {
-        contract_id: Number(res.buy.contract_id),
-        contract_type: contractType,
-        buy_price: Number(res.buy.buy_price ?? targetProposal.ask_price),
-        current_spot: targetProposal.spot,
-        profit: 0,
-        profit_percentage: 0,
-        status: 'open',
-        entry_tick: targetProposal.spot,
-        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
-        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
-        payout: Number(res.buy.payout ?? targetProposal.payout),
-        is_valid_to_sell: isDigit ? 0 : 1,
-        date_start: Number(res.buy.start_time ?? Math.floor(Date.now() / 1000)),
+      if (!userAccount.isAuthorized) {
+        throw new Error(
+          'No trading account connected. Click "Connect Account" below to sign in with Deriv OAuth 2.0, paste a token, or launch Demo Mode.'
+        );
+      }
+
+      let targetProposal = proposal;
+      const reconnectedAuth = await ensureAuthSocketConnected();
+
+      const fetchBoundProposal = async () => {
+        const isDigit = contractType.startsWith('DIGIT');
+        const fresh = await derivWs.fetchProposal({
+          contractType: contractType as 'DIGITMATCH' | 'DIGITDIFF' | 'MULTUP' | 'MULTDOWN',
+          stake: proposal.ask_price,
+          symbol,
+          currency,
+          duration: isDigit ? 1 : undefined,
+          barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+          multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+          preferAuthSocket: true,
+        });
+        if (!fresh) {
+          throw new Error('Could not refresh live quote on authenticated Deriv socket. Please retry.');
+        }
+        return fresh;
       };
-      setActiveContracts((prev) => [newContract, ...prev]);
 
-      if (res.buy.balance_after !== undefined) {
-        setUserAccount((prev) => ({
-          ...prev,
-          balance: Number(res.buy.balance_after),
-        }));
+      if (reconnectedAuth) {
+        targetProposal = await fetchBoundProposal();
       }
+
+      let res: any;
+      try {
+        res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
+      } catch (buyErr) {
+        // If proposal was originally quoted on the public WS before authWs opened, refresh on authWs and retry once
+        if (!reconnectedAuth) {
+          targetProposal = await fetchBoundProposal();
+          res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
+        } else {
+          throw buyErr;
+        }
+      }
+
+      if (res && res.buy) {
+        const isDigit = contractType.startsWith('DIGIT');
+        const newContract: OpenContract = {
+          contract_id: Number(res.buy.contract_id),
+          contract_type: contractType,
+          buy_price: Number(res.buy.buy_price ?? targetProposal.ask_price),
+          current_spot: targetProposal.spot,
+          profit: 0,
+          profit_percentage: 0,
+          status: 'open',
+          entry_tick: targetProposal.spot,
+          barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+          multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+          payout: Number(res.buy.payout ?? targetProposal.payout),
+          is_valid_to_sell: isDigit ? 0 : 1,
+          date_start: Number(res.buy.start_time ?? Math.floor(Date.now() / 1000)),
+        };
+        setActiveContracts((prev) => [newContract, ...prev]);
+
+        if (res.buy.balance_after !== undefined) {
+          setUserAccount((prev) => ({
+            ...prev,
+            balance: Number(res.buy.balance_after),
+          }));
+        }
+      }
+    } finally {
+      // Always release the lock
+      setTradeLock(false);
+      // Clear pending order after execution attempt
+      setPendingOrder(null);
     }
   };
 
@@ -737,6 +756,7 @@ export default function App() {
           setIsAuthModalOpen(true);
         }}
         onConfirmOrder={handleConfirmOrder}
+        tradeLock={tradeLock}
       />
 
       {/* High-Risk Trading Compliance Disclaimer */}

@@ -13,6 +13,7 @@ interface TradeConfirmModalProps {
   userAccount: UserAuthAccount;
   onOpenAuth?: () => void;
   onConfirmOrder: (proposal: DerivProposal) => Promise<void>;
+  tradeLock?: boolean;
 }
 
 export const TradeConfirmModal: React.FC<TradeConfirmModalProps> = ({
@@ -25,6 +26,7 @@ export const TradeConfirmModal: React.FC<TradeConfirmModalProps> = ({
   userAccount,
   onOpenAuth,
   onConfirmOrder,
+  tradeLock = false,
 }) => {
   const [hasAcknowledged, setHasAcknowledged] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -190,16 +192,17 @@ export const TradeConfirmModal: React.FC<TradeConfirmModalProps> = ({
         <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
           <button
             onClick={onClose}
-            className="py-2.5 rounded-xl bg-[#18221E] hover:bg-[#24322C] text-[#EBF2EE] border border-[#2C3E36] font-semibold text-xs transition-colors cursor-pointer"
+            disabled={isSubmitting || tradeLock}
+            className="py-2.5 rounded-xl bg-[#18221E] hover:bg-[#24322C] text-[#EBF2EE] border border-[#2C3E36] font-semibold text-xs transition-colors cursor-pointer disabled:opacity-50"
           >
             Cancel
           </button>
           <button
-            disabled={!hasAcknowledged || isSubmitting}
+            disabled={!hasAcknowledged || isSubmitting || tradeLock}
             onClick={handleExecute}
             className="py-2.5 rounded-xl bg-[#0F5C45] hover:bg-[#147558] text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
           >
-            {isSubmitting ? 'Submitting Order...' : 'Confirm & Execute'}
+            {tradeLock ? 'Trade in Progress...' : isSubmitting ? 'Submitting Order...' : 'Confirm & Execute'}
           </button>
         </div>
       </div>
