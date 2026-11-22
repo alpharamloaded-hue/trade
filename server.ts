@@ -1,8 +1,12 @@
 import 'dotenv/config';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import type { Request, Response } from 'express';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT) || 3000;
 const DERIV_AUTH_URL = 'https://auth.deriv.com/oauth2/auth';
@@ -665,7 +669,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distDir = path.resolve(import.meta.dirname, 'dist');
+    const distDir = path.resolve(__dirname, 'dist');
     app.use(express.static(distDir));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distDir, 'index.html'));
