@@ -2,6 +2,7 @@ import 'dotenv/config';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { existsSync, readdirSync } from 'node:fs';
 import express from 'express';
 import type { Request, Response } from 'express';
 
@@ -671,8 +672,8 @@ async function startServer() {
   } else {
     const distDir = path.resolve(__dirname, 'dist');
     console.log('[Server] Serving static from:', distDir);
-    console.log('[Server] Dist exists:', require('fs').existsSync(distDir));
-    console.log('[Server] Dist contents:', require('fs').readdirSync(distDir));
+    console.log('[Server] Dist exists:', existsSync(distDir));
+    console.log('[Server] Dist contents:', readdirSync(distDir));
     app.use(express.static(distDir));
     app.get('*', (_req: Request, res: Response) => {
       const indexPath = path.join(distDir, 'index.html');
