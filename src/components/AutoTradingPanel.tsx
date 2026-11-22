@@ -49,7 +49,12 @@ const RISK_COLORS = {
   HIGH: 'text-red-400 bg-red-500/15 border-red-500/30',
 };
 
-export const AutoTradingPanel: React.FC = () => {
+interface AutoTradingPanelProps {
+  userAccount: { balance?: number; isAuthorized: boolean; authMethod?: string };
+  balance: number;
+}
+
+export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount, balance }) => {
   const [isAutoTrading, setIsAutoTrading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
@@ -64,9 +69,6 @@ export const AutoTradingPanel: React.FC = () => {
     latestTick,
     symbol,
   } = useDerivTicks('1HZ100V');
-
-  const [balance, setBalance] = useState(10000);
-  const [userAccount, setUserAccount] = useState({ balance: 10000, isAuthorized: true });
 
   const configs = engine.getAllConfigs();
   const performances = engine.getAllPerformance();
@@ -120,7 +122,7 @@ export const AutoTradingPanel: React.FC = () => {
       };
       
       engine.recordTrade(result);
-      setBalance(prev => prev + profit);
+      // Balance updates come from parent via derivWs.onBalance subscription
       setLastResult({ won, profit, strategy: signal.strategy });
       
       if (won) {

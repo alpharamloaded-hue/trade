@@ -761,7 +761,10 @@ export default function App() {
       />
 
       {/* Auto-Trading Panel */}
-      <AutoTradingPanel />
+      <AutoTradingPanel
+        userAccount={userAccount}
+        balance={userAccount.balance ?? 0}
+      />
 
       {/* High-Risk Trading Compliance Disclaimer */}
       <FooterDisclaimer />
