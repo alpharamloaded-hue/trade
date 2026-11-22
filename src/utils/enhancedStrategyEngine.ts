@@ -69,6 +69,8 @@ export interface TradeResult {
   holdTimeMs: number;
   exitReason: 'TP' | 'SL' | 'TRAILING' | 'MANUAL' | 'EXPIRED';
   timestamp: number;
+  digit?: number;      // for digit contracts
+  multiplier?: number; // for multiplier contracts
 }
 
 export interface EnhancedPerformance {

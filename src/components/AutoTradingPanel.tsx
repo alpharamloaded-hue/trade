@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  Brain,
   CheckCircle2,
   Loader2,
   Pause,
@@ -15,9 +16,11 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState, useRef } from 'react';
 import { enhancedStrategyEngine, EnhancedStrategyType, EnhancedStrategyConfig, EnhancedSignal, EnhancedPerformance, EnhancedStrategyEngine, MarketState, STRATEGY_PAYOUTS } from '../utils/enhancedStrategyEngine';
+import { TradeResult } from '../utils/enhancedStrategyEngine';
 import { useDerivTicks } from '../hooks/useDerivTicks';
 import { derivWs } from '../services/derivWs';
 import { soundEffects } from '../services/soundEffects';
+import { analyzeTrade, analyzeSession, getQuickInsight } from '../utils/aiTradeAnalyzer';
 
 const engine = enhancedStrategyEngine;
 
@@ -79,6 +82,12 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
   const performances = engine.getAllPerformance();
   const dailyStats = engine.getDailyStats();
   const marketStateData = engine.getMarketState();
+
+  // AI Analysis State
+  const [aiAnalysis, setAiAnalysis] = useState<{ trade: TradeResult; analysis: any } | null>(null);
+  const [sessionAnalysis, setSessionAnalysis] = useState<any>(null);
+  const [aiInsight, setAiInsight] = useState<string>('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Analyze for signals every tick
   useEffect(() => {
@@ -152,6 +161,56 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
       soundEffects.playPatternAlert('drought');
     }
   };
+
+  // AI Analysis Functions
+  const triggerTradeAnalysis = async (trade: TradeResult) => {
+    if (!marketStateData) return;
+    setIsAnalyzing(true);
+    try {
+      const analysis = await analyzeTrade(trade, marketStateData, balance);
+      setAiAnalysis({ trade, analysis });
+    } catch (err) {
+      console.error('AI analysis failed:', err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const triggerSessionAnalysis = async () => {
+    if (!marketStateData) return;
+    setIsAnalyzing(true);
+    try {
+      const tradeHistory = engine.getTradeHistory();
+      const analysis = await analyzeSession(tradeHistory, marketStateData, balance);
+      setSessionAnalysis(analysis);
+    } catch (err) {
+      console.error('Session analysis failed:', err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const triggerQuickInsight = async () => {
+    if (!marketStateData) return;
+    try {
+      const tradeHistory = engine.getTradeHistory();
+      const insight = await getQuickInsight(tradeHistory, marketStateData);
+      setAiInsight(insight);
+    } catch (err) {
+      console.error('Quick insight failed:', err);
+    }
+  };
+
+  // Trigger AI analysis after trade completes (mock - in real app, use WebSocket onContract update)
+  useEffect(() => {
+    if (lastResult && marketStateData) {
+      const tradeHistory = engine.getTradeHistory();
+      const latestTrade = tradeHistory[0];
+      if (latestTrade && latestTrade.timestamp > Date.now() - 5000) {
+        triggerTradeAnalysis(latestTrade);
+      }
+    }
+  }, [lastResult, marketStateData]);
 
   const toggleAutoTrading = () => {
     if (!isAutoTrading) {
@@ -492,6 +551,128 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Insights Panel */}
+      {(aiAnalysis || sessionAnalysis || aiInsight) && (
+        <div className="p-4 rounded-2xl bg-[#121916] border border-[#F28C28]/40 space-y-4">
+          <div className="flex items-center gap-2">
+            <Brain className="w-5 h-5 text-[#F28C28]" />
+            <h4 className="text-sm font-bold text-white">AI Trade Analysis</h4>
+            {isAnalyzing && <Loader2 className="w-4 h-4 text-[#F28C28] animate-spin" />}
+          </div>
+
+          {/* Quick Insight */}
+          {aiInsight && (
+            <div className="p-3 rounded-xl bg-[#18221E] border border-[#2C3E36] text-[11px] text-[#FFB56B]">
+              <strong className="text-white">Quick Insight:</strong> {aiInsight}
+              <button
+                onClick={triggerQuickInsight}
+                className="ml-2 text-[10px] text-[#F28C28] hover:underline"
+              >
+                Refresh
+              </button>
+            </div>
+          )}
+
+          {/* Last Trade Analysis */}
+          {aiAnalysis && (
+            <div className="space-y-2">
+              <div className="p-3 rounded-xl bg-[#18221E] border border-[#2C3E36]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-[#F28C28]">LAST TRADE ANALYSIS</span>
+                  <span className="text-[10px] text-[#9FB3AA]">{aiAnalysis.analysis.confidence}% confidence</span>
+                </div>
+                <div className="text-sm text-white">{aiAnalysis.analysis.summary}</div>
+                <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
+                  <div>
+                    <span className="text-[#34D399]">Strengths:</span>
+                    <ul className="list-disc list-inside text-[#9FB3AA] mt-1 space-y-0.5">
+                      {aiAnalysis.analysis.strengths.map((s: string, i: number) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <span className="text-red-400">Weaknesses:</span>
+                    <ul className="list-disc list-inside text-[#9FB3AA] mt-1 space-y-0.5">
+                      {aiAnalysis.analysis.weaknesses.map((s: string, i: number) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] text-[#F28C28]">
+                  <strong>Suggestions:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-0.5">
+                    {aiAnalysis.analysis.suggestions.map((s: string, i: number) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Session Analysis */}
+          {sessionAnalysis && (
+            <div className="space-y-2">
+              <div className="p-3 rounded-xl bg-[#18221E] border border-[#2C3E36]">
+                <div className="text-xs font-bold text-[#F28C28] mb-2">SESSION PERFORMANCE</div>
+                <div className="text-sm text-white mb-3">{sessionAnalysis.overallPerformance}</div>
+                
+                <div className="text-[10px] text-[#9FB3AA] mb-3">
+                  <strong>Market:</strong> {sessionAnalysis.marketConditions}
+                </div>
+
+                <div className="space-y-1 mb-3">
+                  <div className="text-[10px] font-bold text-white">Strategy Breakdown:</div>
+                  {Object.entries(sessionAnalysis.strategyBreakdown).map(([strat, data]: [string, any]) => (
+                    data.trades > 0 && (
+                      <div key={strat} className="flex justify-between text-[10px] py-0.5">
+                        <span className="text-[#9FB3AA]">{strat.replace(/_/g, ' ')}</span>
+                        <span className="text-white font-mono">
+                          {data.trades} trades | {data.winRate.toFixed(1)}% WR | $${data.profit.toFixed(2)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-[#24322C]">
+                  <div className="text-[10px] font-bold text-white mb-1">Recommendations:</div>
+                  <ul className="list-disc list-inside text-[10px] text-[#9FB3AA] space-y-0.5">
+                    {sessionAnalysis.recommendations.map((r: string, i: number) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="pt-2 border-t border-[#24322C] text-[10px] text-[#F28C28]">
+                  <strong>Next Session Focus:</strong> {sessionAnalysis.nextSessionFocus}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-2 pt-2">
+            <button
+              onClick={triggerSessionAnalysis}
+              disabled={isAnalyzing}
+              className="flex-1 py-2 rounded-xl bg-[#0F5C45] hover:bg-[#147558] text-white font-bold text-xs transition-colors disabled:opacity-50"
+            >
+              {isAnalyzing ? 'Analyzing...' : 'Analyze Full Session'}
+            </button>
+            <button
+              onClick={triggerQuickInsight}
+              disabled={isAnalyzing}
+              className="flex-1 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-white font-semibold text-xs hover:bg-[#24322C] transition-colors disabled:opacity-50"
+            >
+              Quick Insight
+            </button>
           </div>
         </div>
       )}
