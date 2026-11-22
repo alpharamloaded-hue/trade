@@ -14,54 +14,55 @@ import {
   Zap,
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
-import { strategyEngine, StrategyType, StrategyConfig, StrategySignal, StrategyPerformance, STRATEGY_PAYOUTS, STRATEGY_CONTRACTS } from '../utils/strategyEngine';
+import { enhancedStrategyEngine, EnhancedStrategyType, EnhancedStrategyConfig, EnhancedSignal, EnhancedPerformance, EnhancedStrategyEngine, MarketState, STRATEGY_PAYOUTS } from '../utils/enhancedStrategyEngine';
 import { useDerivTicks } from '../hooks/useDerivTicks';
 import { derivWs } from '../services/derivWs';
 import { soundEffects } from '../services/soundEffects';
 
-const engine = strategyEngine;
+const engine = enhancedStrategyEngine;
 
-const STRATEGY_LABELS: Record<StrategyType, string> = {
-  DROUGHT_MATCH: 'Drought Match (9.2x)',
-  COLD_DIFFER: 'Cold Differ (1.09x)',
-  X2X_REVERSAL: 'X2X Reversal (1.09x)',
-  TWIN_DIFFER: 'Twin Differ (1.09x)',
-  STREAK_DIFFER: 'Streak Differ (1.09x)',
-  TREND_MULTIPLIER: 'Trend Multiplier (20-50x)',
-  MEAN_REV_MULT: 'Mean Rev Multiplier (20-50x)',
-  SCALP_MULTIPLIER: 'Scalp Multiplier (10-20x)',
+const STRATEGY_LABELS: Record<EnhancedStrategyType, string> = {
+  DROUGHT_MATCH_PREMIUM: 'Drought Match Premium (9.2x)',
+  COLD_DIFFER_PREMIUM: 'Cold Differ Premium (1.09x)',
+  X2X_REVERSAL_PREMIUM: 'X2X Reversal Premium (1.09x)',
+  TWIN_DIFFER_PREMIUM: 'Twin Differ Premium (1.09x)',
+  STREAK_EXHAUSTION: 'Streak Exhaustion (1.09x)',
+  TREND_PULLBACK_MULT: 'Trend Pullback Mult (50x)',
+  MEAN_REVERSION_MULT: 'Mean Reversion Mult (50x)',
+  SCALP_MULTIPLIER_PREMIUM: 'Scalp Mult Premium (20x)',
 };
 
-const STRATEGY_ICONS: Record<StrategyType, React.ReactNode> = {
-  DROUGHT_MATCH: <Zap className="w-4 h-4" />,
-  COLD_DIFFER: <Shield className="w-4 h-4" />,
-  X2X_REVERSAL: <Activity className="w-4 h-4" />,
-  TWIN_DIFFER: <RotateCcw className="w-4 h-4" />,
-  STREAK_DIFFER: <TrendingDown className="w-4 h-4" />,
-  TREND_MULTIPLIER: <TrendingUp className="w-4 h-4" />,
-  MEAN_REV_MULT: <RotateCcw className="w-4 h-4" />,
-  SCALP_MULTIPLIER: <Zap className="w-4 h-4" />,
+const STRATEGY_ICONS: Record<EnhancedStrategyType, React.ReactNode> = {
+  DROUGHT_MATCH_PREMIUM: <Zap className="w-4 h-4" />,
+  COLD_DIFFER_PREMIUM: <Shield className="w-4 h-4" />,
+  X2X_REVERSAL_PREMIUM: <Activity className="w-4 h-4" />,
+  TWIN_DIFFER_PREMIUM: <RotateCcw className="w-4 h-4" />,
+  STREAK_EXHAUSTION: <TrendingDown className="w-4 h-4" />,
+  TREND_PULLBACK_MULT: <TrendingUp className="w-4 h-4" />,
+  MEAN_REVERSION_MULT: <RotateCcw className="w-4 h-4" />,
+  SCALP_MULTIPLIER_PREMIUM: <Zap className="w-4 h-4" />,
 };
 
 const RISK_COLORS = {
   LOW: 'text-[#34D399] bg-[#0F5C45]/30 border-[#34D399]/30',
-  MEDIUM: 'text-[#FFB56B] bg-[#F28C28]/15 border-[#F28C28]/40',
-  HIGH: 'text-red-400 bg-red-500/15 border-red-500/30',
+  BALANCED: 'text-[#FFB56B] bg-[#F28C28]/15 border-[#F28C28]/40',
+  ELEVATED: 'text-red-400 bg-red-500/15 border-red-500/30',
 };
 
 interface AutoTradingPanelProps {
   userAccount: { balance?: number; isAuthorized: boolean; authMethod?: string };
   balance: number;
-  onExecuteTrade: (signal: StrategySignal) => Promise<void>;
+  onExecuteTrade: (signal: EnhancedSignal) => Promise<void>;
 }
 
 export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount, balance, onExecuteTrade }) => {
   const [isAutoTrading, setIsAutoTrading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
-  const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
+  const [selectedStrategy, setSelectedStrategy] = useState<EnhancedStrategyType | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [lastSignal, setLastSignal] = useState<StrategySignal | null>(null);
-  const [lastResult, setLastResult] = useState<{ won: boolean; profit: number; strategy: StrategyType } | null>(null);
+  const [lastSignal, setLastSignal] = useState<EnhancedSignal | null>(null);
+  const [lastResult, setLastResult] = useState<{ won: boolean; profit: number; strategy: EnhancedStrategyType } | null>(null);
+  const [marketState, setMarketState] = useState<MarketState | null>(null);
 
   const {
     digitStats,
@@ -74,6 +75,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
   const configs = engine.getAllConfigs();
   const performances = engine.getAllPerformance();
   const dailyStats = engine.getDailyStats();
+  const marketStateData = engine.getMarketState();
 
   // Analyze for signals every tick
   useEffect(() => {
@@ -81,17 +83,17 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
     
     const signals = engine.analyze(digitStats, ticks, patterns, latestTick, balance);
     if (signals.length > 0) {
-      const bestSignal = signals.sort((a, b) => b.confidenceScore - a.confidenceScore)[0];
+      const bestSignal = signals.sort((a, b) => b.conviction - a.conviction)[0];
       setLastSignal(bestSignal);
       
-      // Execute if confidence is high enough
-      if (bestSignal.confidenceScore >= configs[bestSignal.strategy].minConfidence) {
+      // Execute if conviction is high enough
+      if (bestSignal.conviction >= configs[bestSignal.strategy].minConviction) {
         executeSignal(bestSignal);
       }
     }
-  }, [latestTick?.epoch, isAutoTrading]);
+  }, [latestTick?.epoch, isAutoTrading, balance]);
 
-  const executeSignal = async (signal: StrategySignal) => {
+  const executeSignal = async (signal: EnhancedSignal) => {
     if (!userAccount.isAuthorized) {
       setErrorMsg('Account not authorized for auto-trading');
       return;
@@ -105,14 +107,20 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
       
       // Record in our strategy engine for tracking
       const result = {
+        id: `trade-${Date.now()}`,
+        signalId: signal.id,
         strategy: signal.strategy,
-        contractType: signal.recommendedContract,
-        stake: signal.suggestedStake,
-        payout: signal.suggestedStake * STRATEGY_PAYOUTS[signal.strategy],
+        contractType: signal.contractType,
+        stake: signal.stakeAmount,
+        entryPrice: signal.entryPrice,
+        payout: signal.stakeAmount * STRATEGY_PAYOUTS[signal.strategy],
         won: true, // Will be updated via WebSocket
         profit: 0, // Will be updated via WebSocket
+        riskReward: signal.riskReward,
+        holdTimeMs: 0,
+        exitReason: 'MANUAL' as const,
         timestamp: Date.now(),
-        digit: signal.recommendedParam,
+        digit: signal.param,
       };
       
       engine.recordTrade(result);
@@ -144,7 +152,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
     setIsAutoTrading(prev => !prev);
   };
 
-  const getStrategySignals = (type: StrategyType): StrategySignal[] => {
+  const getStrategySignals = (type: EnhancedStrategyType): EnhancedSignal[] => {
     return engine.analyze(digitStats, ticks, patterns, latestTick, balance)
       .filter(s => s.strategy === type);
   };
@@ -227,10 +235,10 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
           <div className="p-3 rounded-xl bg-[#18221E] border border-[#F28C28]/40 mb-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-[#F28C28]">ACTIVE SIGNAL</span>
-              <span className="text-[10px] font-mono text-[#9FB3AA]">{lastSignal.confidenceScore}% confidence</span>
+              <span className="text-[10px] font-mono text-[#9FB3AA]">{lastSignal.conviction}% conviction</span>
             </div>
             <div className="text-sm font-bold text-white">{lastSignal.headline}</div>
-            <div className="text-[11px] text-[#9FB3AA] mt-1">{lastSignal.rationale}</div>
+            <div className="text-[11px] text-[#9FB3AA] mt-1">{lastSignal.reasoning.join(' | ')}</div>
           </div>
         )}
 
@@ -258,13 +266,13 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
 
       {/* Strategy Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {(Object.keys(configs) as StrategyType[]).map(type => {
+        {(Object.keys(configs) as EnhancedStrategyType[]).map(type => {
           const config = configs[type];
           const perf = performances[type];
           const signals = getStrategySignals(type);
           const hasSignal = signals.length > 0;
           const bestSignal = signals[0];
-          const riskColor = RISK_COLORS[config.riskLevel];
+          const riskColor = RISK_COLORS[config.riskLevel as keyof typeof RISK_COLORS] || RISK_COLORS.LOW;
 
           return (
             <div
@@ -282,7 +290,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
                   </div>
                   <div>
                     <div className="text-xs font-bold text-white">{STRATEGY_LABELS[type]}</div>
-                    <div className="text-[10px] text-[#9FB3AA] font-mono">{config.stakePercent}% stake · {config.maxDailyLoss}% max DD</div>
+                    <div className="text-[10px] text-[#9FB3AA] font-mono">{config.baseStakePercent}%–{config.maxStakePercent}% stake · {config.maxDailyLossPercent}% max DD</div>
                   </div>
                 </div>
                 
@@ -293,7 +301,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
                     onChange={(e) => {
                       const newConfigs = { ...configs };
                       newConfigs[type] = { ...config, enabled: e.target.checked };
-                      Object.entries(newConfigs).forEach(([k, v]) => engine.updateConfig(k as StrategyType, v));
+                      Object.entries(newConfigs).forEach(([k, v]) => engine.updateConfig(k as EnhancedStrategyType, v));
                     }}
                     className="sr-only peer"
                   />
@@ -322,12 +330,12 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
               {/* Active Signal for this strategy */}
               {hasSignal && bestSignal && (
                 <div className="p-2 rounded-lg bg-[#F28C28]/10 border border-[#F28C28]/30 mb-2">
-                  <div className="text-[10px] font-bold text-[#F28C28] mb-1">SIGNAL: {bestSignal.confidenceScore}%</div>
+                  <div className="text-[10px] font-bold text-[#F28C28] mb-1">SIGNAL: {bestSignal.conviction}%</div>
                   <div className="text-xs text-white">{bestSignal.headline}</div>
-                  <div className="text-[10px] text-[#9FB3AA] mt-1">{bestSignal.rationale}</div>
+                  <div className="text-[10px] text-[#9FB3AA] mt-1">{bestSignal.reasoning.join(' | ')}</div>
                   <div className="flex items-center justify-between mt-2 text-[10px] font-mono">
-                    <span className="text-[#34D399]">~{bestSignal.winRateEstimate.toFixed(0)}% WR</span>
-                    <span className="text-[#F28C28]">{bestSignal.suggestedStake.toFixed(2)} stake</span>
+                    <span className="text-[#34D399]">~{bestSignal.expectedWinRate.toFixed(0)}% WR</span>
+                    <span className="text-[#F28C28]">{bestSignal.stakeAmount.toFixed(2)} stake</span>
                   </div>
                 </div>
               )}
@@ -370,7 +378,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
                     onChange={(e) => {
                       const newConfigs = { ...configs };
                       newConfigs[selectedStrategy] = { ...configs[selectedStrategy], enabled: e.target.checked };
-                      Object.entries(newConfigs).forEach(([k, v]) => engine.updateConfig(k as StrategyType, v));
+                      Object.entries(newConfigs).forEach(([k, v]) => engine.updateConfig(k as EnhancedStrategyType, v));
                     }}
                     className="w-4 h-4 accent-[#F28C28]"
                   />
@@ -379,31 +387,47 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#9FB3AA] mb-1">Stake % per Trade</label>
+                <label className="block text-xs font-bold text-[#9FB3AA] mb-1">Base Stake % per Trade</label>
                 <input
                   type="number"
                   min="0.1"
                   max="10"
                   step="0.1"
-                  value={configs[selectedStrategy].stakePercent}
+                  value={configs[selectedStrategy].baseStakePercent}
                   onChange={(e) => {
                     const val = Math.max(0.1, Math.min(10, parseFloat(e.target.value) || 1));
-                    engine.updateConfig(selectedStrategy, { stakePercent: val });
+                    engine.updateConfig(selectedStrategy, { baseStakePercent: val });
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-white focus:outline-none focus:border-[#F28C28]"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#9FB3AA] mb-1">Min Confidence</label>
+                <label className="block text-xs font-bold text-[#9FB3AA] mb-1">Max Stake % per Trade</label>
+                <input
+                  type="number"
+                  min="0.1"
+                  max="10"
+                  step="0.1"
+                  value={configs[selectedStrategy].maxStakePercent}
+                  onChange={(e) => {
+                    const val = Math.max(0.1, Math.min(10, parseFloat(e.target.value) || 1));
+                    engine.updateConfig(selectedStrategy, { maxStakePercent: val });
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-white focus:outline-none focus:border-[#F28C28]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#9FB3AA] mb-1">Min Conviction</label>
                 <input
                   type="number"
                   min="50"
                   max="99"
-                  value={configs[selectedStrategy].minConfidence}
+                  value={configs[selectedStrategy].minConviction}
                   onChange={(e) => {
                     const val = Math.max(50, Math.min(99, parseInt(e.target.value) || 70));
-                    engine.updateConfig(selectedStrategy, { minConfidence: val });
+                    engine.updateConfig(selectedStrategy, { minConviction: val });
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-white focus:outline-none focus:border-[#F28C28]"
                 />
@@ -415,10 +439,10 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
                   type="number"
                   min="1"
                   max="20"
-                  value={configs[selectedStrategy].maxDailyLoss}
+                  value={configs[selectedStrategy].maxDailyLossPercent}
                   onChange={(e) => {
                     const val = Math.max(1, Math.min(20, parseInt(e.target.value) || 5));
-                    engine.updateConfig(selectedStrategy, { maxDailyLoss: val });
+                    engine.updateConfig(selectedStrategy, { maxDailyLossPercent: val });
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-[#18221E] border border-[#2C3E36] text-white focus:outline-none focus:border-[#F28C28]"
                 />
@@ -465,4 +489,4 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
   );
 };
 
-// Need to import STRATEGY_PAYOUTS and STRATEGY_CONTRACTS from strategyEngine
+

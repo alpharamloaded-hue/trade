@@ -20,7 +20,7 @@ import { useDerivTicks } from './hooks/useDerivTicks';
 import { derivWs } from './services/derivWs';
 import { soundEffects } from './services/soundEffects';
 import { DerivProposal, OpenContract, TradeEntrySignal, UserAuthAccount } from './types/deriv';
-import { STRATEGY_PAYOUTS, StrategySignal } from './utils/strategyEngine';
+import { STRATEGY_PAYOUTS, EnhancedSignal } from './utils/enhancedStrategyEngine';
 
 export default function App() {
   // 1. Tick streaming & analytics hook
@@ -528,9 +528,9 @@ export default function App() {
   };
 
   // Execute trade from auto-trading signal (bypasses confirmation modal)
-  const executeAutoTrade = async (signal: StrategySignal) => {
-    const contractType = signal.recommendedContract;
-    const targetParam = signal.recommendedParam;
+  const executeAutoTrade = async (signal: EnhancedSignal) => {
+    const contractType = signal.contractType;
+    const targetParam = signal.param;
     const currency = userAccount.currency || 'USD';
 
     // Virtual demo account execution
@@ -540,15 +540,15 @@ export default function App() {
       const newContract: OpenContract = {
         contract_id: mockId,
         contract_type: contractType,
-        buy_price: signal.suggestedStake,
-        current_spot: signal.suggestedStake, // placeholder
+        buy_price: signal.stakeAmount,
+        current_spot: signal.stakeAmount, // placeholder
         profit: 0,
         profit_percentage: 0,
         status: 'open',
-        entry_tick: signal.suggestedStake,
+        entry_tick: signal.stakeAmount,
         barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
         multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
-        payout: signal.suggestedStake * STRATEGY_PAYOUTS[signal.strategy],
+        payout: signal.stakeAmount * STRATEGY_PAYOUTS[signal.strategy],
         is_valid_to_sell: isDigit ? 0 : 1,
         date_start: Math.floor(Date.now() / 1000),
       };
@@ -556,7 +556,7 @@ export default function App() {
       if (userAccount.balance !== undefined) {
         setUserAccount((prev) => ({
           ...prev,
-          balance: Number(Math.max(0, (prev.balance || 10000) - signal.suggestedStake).toFixed(2)),
+          balance: Number(Math.max(0, (prev.balance || 10000) - signal.stakeAmount).toFixed(2)),
         }));
       }
       return;
@@ -573,7 +573,7 @@ export default function App() {
       const isDigit = contractType.startsWith('DIGIT');
       const fresh = await derivWs.fetchProposal({
         contractType: contractType as 'DIGITMATCH' | 'DIGITDIFF' | 'MULTUP' | 'MULTDOWN',
-        stake: signal.suggestedStake,
+        stake: signal.stakeAmount,
         symbol,
         currency,
         duration: isDigit ? 1 : undefined,
