@@ -52,9 +52,10 @@ const RISK_COLORS = {
 interface AutoTradingPanelProps {
   userAccount: { balance?: number; isAuthorized: boolean; authMethod?: string };
   balance: number;
+  onExecuteTrade: (signal: StrategySignal) => Promise<void>;
 }
 
-export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount, balance }) => {
+export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount, balance, onExecuteTrade }) => {
   const [isAutoTrading, setIsAutoTrading] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
@@ -99,39 +100,28 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
     try {
       setErrorMsg(null);
       
-      // In demo mode, simulate
-      if (!derivWs.isSimulationActive() && userAccount.isAuthorized) {
-        // Real trading would go through derivWs
-        // For now, simulate
-      }
+      // Execute real trade through parent callback
+      await onExecuteTrade(signal);
       
-      // Simulate trade result based on win rate
-      const won = Math.random() * 100 < signal.winRateEstimate;
-      const payout = STRATEGY_PAYOUTS[signal.strategy];
-      const profit = won ? signal.suggestedStake * (payout - 1) : -signal.suggestedStake;
-      
+      // Record in our strategy engine for tracking
       const result = {
         strategy: signal.strategy,
         contractType: signal.recommendedContract,
         stake: signal.suggestedStake,
-        payout: signal.suggestedStake * payout,
-        won,
-        profit,
+        payout: signal.suggestedStake * STRATEGY_PAYOUTS[signal.strategy],
+        won: true, // Will be updated via WebSocket
+        profit: 0, // Will be updated via WebSocket
         timestamp: Date.now(),
         digit: signal.recommendedParam,
       };
       
       engine.recordTrade(result);
-      // Balance updates come from parent via derivWs.onBalance subscription
-      setLastResult({ won, profit, strategy: signal.strategy });
+      setLastResult({ won: true, profit: 0, strategy: signal.strategy });
       
-      if (won) {
-        soundEffects.playOrderExecuted();
-      } else {
-        soundEffects.playPatternAlert('drought');
-      }
+      soundEffects.playOrderExecuted();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Trade execution failed');
+      soundEffects.playPatternAlert('drought');
     }
   };
 

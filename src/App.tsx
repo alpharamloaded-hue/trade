@@ -20,6 +20,7 @@ import { useDerivTicks } from './hooks/useDerivTicks';
 import { derivWs } from './services/derivWs';
 import { soundEffects } from './services/soundEffects';
 import { DerivProposal, OpenContract, TradeEntrySignal, UserAuthAccount } from './types/deriv';
+import { STRATEGY_PAYOUTS, StrategySignal } from './utils/strategyEngine';
 
 export default function App() {
   // 1. Tick streaming & analytics hook
@@ -526,6 +527,112 @@ export default function App() {
     }
   };
 
+  // Execute trade from auto-trading signal (bypasses confirmation modal)
+  const executeAutoTrade = async (signal: StrategySignal) => {
+    const contractType = signal.recommendedContract;
+    const targetParam = signal.recommendedParam;
+    const currency = userAccount.currency || 'USD';
+
+    // Virtual demo account execution
+    if (userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive())) {
+      const mockId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+      const isDigit = contractType.startsWith('DIGIT');
+      const newContract: OpenContract = {
+        contract_id: mockId,
+        contract_type: contractType,
+        buy_price: signal.suggestedStake,
+        current_spot: signal.suggestedStake, // placeholder
+        profit: 0,
+        profit_percentage: 0,
+        status: 'open',
+        entry_tick: signal.suggestedStake,
+        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+        payout: signal.suggestedStake * STRATEGY_PAYOUTS[signal.strategy],
+        is_valid_to_sell: isDigit ? 0 : 1,
+        date_start: Math.floor(Date.now() / 1000),
+      };
+      setActiveContracts((prev) => [newContract, ...prev]);
+      if (userAccount.balance !== undefined) {
+        setUserAccount((prev) => ({
+          ...prev,
+          balance: Number(Math.max(0, (prev.balance || 10000) - signal.suggestedStake).toFixed(2)),
+        }));
+      }
+      return;
+    }
+
+    if (!userAccount.isAuthorized) {
+      throw new Error('No trading account connected for auto-trading');
+    }
+
+    let targetProposal: DerivProposal;
+    const reconnectedAuth = await ensureAuthSocketConnected();
+
+    const fetchBoundProposal = async () => {
+      const isDigit = contractType.startsWith('DIGIT');
+      const fresh = await derivWs.fetchProposal({
+        contractType: contractType as 'DIGITMATCH' | 'DIGITDIFF' | 'MULTUP' | 'MULTDOWN',
+        stake: signal.suggestedStake,
+        symbol,
+        currency,
+        duration: isDigit ? 1 : undefined,
+        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+        preferAuthSocket: true,
+      });
+      if (!fresh) {
+        throw new Error('Could not refresh live quote for auto-trade');
+      }
+      return fresh;
+    };
+
+    if (reconnectedAuth) {
+      targetProposal = await fetchBoundProposal();
+    } else {
+      targetProposal = await fetchBoundProposal();
+    }
+
+    let res: any;
+    try {
+      res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
+    } catch (buyErr) {
+      if (!reconnectedAuth) {
+        targetProposal = await fetchBoundProposal();
+        res = await derivWs.executeBuy(targetProposal.id, targetProposal.ask_price);
+      } else {
+        throw buyErr;
+      }
+    }
+
+    if (res && res.buy) {
+      const isDigit = contractType.startsWith('DIGIT');
+      const newContract: OpenContract = {
+        contract_id: Number(res.buy.contract_id),
+        contract_type: contractType,
+        buy_price: Number(res.buy.buy_price ?? targetProposal.ask_price),
+        current_spot: targetProposal.spot,
+        profit: 0,
+        profit_percentage: 0,
+        status: 'open',
+        entry_tick: targetProposal.spot,
+        barrier: isDigit && targetParam !== undefined ? String(targetParam) : undefined,
+        multiplier: !isDigit && targetParam !== undefined ? Number(targetParam) : undefined,
+        payout: Number(res.buy.payout ?? targetProposal.payout),
+        is_valid_to_sell: isDigit ? 0 : 1,
+        date_start: Number(res.buy.start_time ?? Math.floor(Date.now() / 1000)),
+      };
+      setActiveContracts((prev) => [newContract, ...prev]);
+
+      if (res.buy.balance_after !== undefined) {
+        setUserAccount((prev) => ({
+          ...prev,
+          balance: Number(res.buy.balance_after),
+        }));
+      }
+    }
+  };
+
   const handleClosePosition = async (contractId: number) => {
     const isDemo =
       userAccount.authMethod === 'demo' || (!userAccount.isAuthorized && derivWs.isSimulationActive());
@@ -764,6 +871,7 @@ export default function App() {
       <AutoTradingPanel
         userAccount={userAccount}
         balance={userAccount.balance ?? 0}
+        onExecuteTrade={executeAutoTrade}
       />
 
       {/* High-Risk Trading Compliance Disclaimer */}
