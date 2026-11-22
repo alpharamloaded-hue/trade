@@ -7,6 +7,7 @@ import { BarChart3, Clock, Flame, Gauge, Layers, ShieldCheck, Sparkles, Trending
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivePositionsTracker } from './components/ActivePositionsTracker';
 import { AuthModal } from './components/AuthModal';
+import { AutoTradingPanel } from './components/AutoTradingPanel';
 import { DigitAnalyticsView } from './components/DigitAnalyticsView';
 import { FooterDisclaimer } from './components/FooterDisclaimer';
 import { Header } from './components/Header';
@@ -758,6 +759,9 @@ export default function App() {
         onConfirmOrder={handleConfirmOrder}
         tradeLock={tradeLock}
       />
+
+      {/* Auto-Trading Panel */}
+      <AutoTradingPanel />
 
       {/* High-Risk Trading Compliance Disclaimer */}
       <FooterDisclaimer />
