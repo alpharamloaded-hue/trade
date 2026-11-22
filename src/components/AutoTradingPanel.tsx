@@ -13,7 +13,7 @@ import {
   TrendingDown,
   Zap,
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { enhancedStrategyEngine, EnhancedStrategyType, EnhancedStrategyConfig, EnhancedSignal, EnhancedPerformance, EnhancedStrategyEngine, MarketState, STRATEGY_PAYOUTS } from '../utils/enhancedStrategyEngine';
 import { useDerivTicks } from '../hooks/useDerivTicks';
 import { derivWs } from '../services/derivWs';
@@ -57,6 +57,9 @@ interface AutoTradingPanelProps {
 
 export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount, balance, onExecuteTrade }) => {
   const [isAutoTrading, setIsAutoTrading] = useState(false);
+  const isAutoTradingRef = useRef(isAutoTrading);
+  isAutoTradingRef.current = isAutoTrading;
+  
   const [showConfig, setShowConfig] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<EnhancedStrategyType | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -93,7 +96,19 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
     }
   }, [latestTick?.epoch, isAutoTrading, balance]);
 
+  // Cleanup: clear last signal when auto-trading stops
+  useEffect(() => {
+    if (!isAutoTrading) {
+      setLastSignal(null);
+    }
+  }, [isAutoTrading]);
+
   const executeSignal = async (signal: EnhancedSignal) => {
+    // Check if auto-trading is still enabled (use ref for latest value)
+    if (!isAutoTradingRef.current) {
+      return;
+    }
+    
     if (!userAccount.isAuthorized) {
       setErrorMsg('Account not authorized for auto-trading');
       return;
@@ -101,6 +116,11 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({ userAccount,
 
     try {
       setErrorMsg(null);
+      
+      // Double-check auto-trading is still enabled before executing
+      if (!isAutoTradingRef.current) {
+        return;
+      }
       
       // Execute real trade through parent callback
       await onExecuteTrade(signal);
